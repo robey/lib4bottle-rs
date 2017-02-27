@@ -1,0 +1,9 @@
+[package]
+name = "lib4bottle"
+version = "0.1.0"
+authors = [ "Robey Pointer <robeypointer@gmail.com>" ]
+
+[dependencies]
+
+[profile.test]
+opt-level = 3
