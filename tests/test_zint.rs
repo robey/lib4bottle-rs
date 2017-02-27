@@ -52,6 +52,51 @@ mod zint {
       987654321
     );
   }
+
+  #[test]
+  fn encode_length() {
+    let mut cursor = io::Cursor::new(Vec::new());
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_length(&mut cursor, 1).unwrap();
+    assert_eq!(cursor.to_hex(), "01");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_length(&mut cursor, 100).unwrap();
+    assert_eq!(cursor.to_hex(), "64");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_length(&mut cursor, 129).unwrap();
+    assert_eq!(cursor.to_hex(), "8102");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_length(&mut cursor, 127).unwrap();
+    assert_eq!(cursor.to_hex(), "7f");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_length(&mut cursor, 256).unwrap();
+    assert_eq!(cursor.to_hex(), "f1");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_length(&mut cursor, 1024).unwrap();
+    assert_eq!(cursor.to_hex(), "f3");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_length(&mut cursor, 12345).unwrap();
+    assert_eq!(cursor.to_hex(), "d98101");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_length(&mut cursor, 3998778).unwrap();
+    assert_eq!(cursor.to_hex(), "ea43d003");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_length(&mut cursor, 87654321).unwrap();
+    assert_eq!(cursor.to_hex(), "e1fb9753");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_length(&mut cursor, 1 << 21).unwrap();
+    assert_eq!(cursor.to_hex(), "fe");
+  }
 }
 
 
@@ -63,37 +108,7 @@ mod zint {
 // import "source-map-support/register";
 //
 // describe("zint", () => {
-//   it("encode packed", () => {
-//     zint.encodePackedInt(0).toString("hex").should.eql("00");
-//     zint.encodePackedInt(100).toString("hex").should.eql("64");
-//     zint.encodePackedInt(129).toString("hex").should.eql("81");
-//     zint.encodePackedInt(127).toString("hex").should.eql("7f");
-//     zint.encodePackedInt(256).toString("hex").should.eql("0001");
-//     zint.encodePackedInt(987654321).toString("hex").should.eql("b168de3a");
-//   });
 //
-//   it("decode packed", () => {
-//     zint.decodePackedInt(new Buffer("00", "hex")).should.eql(0);
-//     zint.decodePackedInt(new Buffer("ff", "hex")).should.eql(255);
-//     zint.decodePackedInt(new Buffer("64", "hex")).should.eql(100);
-//     zint.decodePackedInt(new Buffer("81", "hex")).should.eql(129);
-//     zint.decodePackedInt(new Buffer("7f", "hex")).should.eql(127);
-//     zint.decodePackedInt(new Buffer("0001", "hex")).should.eql(256);
-//     zint.decodePackedInt(new Buffer("b168de3a", "hex")).should.eql(987654321);
-//   });
-//
-//   it("encode length", () => {
-//     zint.encodeLength(1).toString("hex").should.eql("01");
-//     zint.encodeLength(100).toString("hex").should.eql("64");
-//     zint.encodeLength(129).toString("hex").should.eql("8102");
-//     zint.encodeLength(127).toString("hex").should.eql("7f");
-//     zint.encodeLength(256).toString("hex").should.eql("f1");
-//     zint.encodeLength(1024).toString("hex").should.eql("f3");
-//     zint.encodeLength(12345).toString("hex").should.eql("d98101");
-//     zint.encodeLength(3998778).toString("hex").should.eql("ea43d003");
-//     zint.encodeLength(87654321).toString("hex").should.eql("e1fb9753");
-//     zint.encodeLength(Math.pow(2, 21)).toString("hex").should.eql("fe");
-//   });
 //
 //   it("determine length of length", () => {
 //     zint.lengthLength(0x00).should.eql(1);
