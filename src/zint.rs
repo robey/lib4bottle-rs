@@ -23,41 +23,19 @@ pub fn encode_packed_int<W: io::Write>(writer: &mut W, number: u64) -> io::Resul
   Ok(())
 }
 
-pub fn bytes_to_hex(bytes: &[u8]) -> String {
-  bytes.iter().map(|b| format!("{:02x}", b)).collect::<Vec<String>>().join("")
+pub fn decode_packed_int<R: io::Read>(reader: &mut R) -> io::Result<u64> {
+  let mut buffer: [u8; 1] = [ 0 ];
+  let mut rv: u64 = 0;
+  let mut shift: u8 = 0;
+
+  while reader.read(&mut buffer)? > 0 && shift < 64 {
+    rv += (buffer[0] as u64) << shift;
+    shift += 8;
+  }
+  Ok(rv)
 }
 
-pub fn cursor_to_hex(cursor: &io::Cursor<Vec<u8>>) -> String {
-  let slice = cursor.get_ref();
-  bytes_to_hex(&slice[0..(cursor.position() as usize)])
-}
 
-// "use strict";
-//
-//
-// export function encodePackedInt(number) {
-//   if (number < 0) throw new Error("Unsigned ints only, plz");
-//   const bytes = [];
-//   while (number > 0xff) {
-//     bytes.push(number & 0xff);
-//     // don't use >> here. js will truncate the number to a 32-bit int.
-//     number /= 256;
-//   }
-//   bytes.push(number & 0xff);
-//   return new Buffer(bytes);
-// }
-//
-// export function decodePackedInt(buffer) {
-//   let rv = 0;
-//   let multiplier = 1;
-//
-//   for (let i = 0; i < buffer.length; i++) {
-//     rv += (buffer[i] & 0xff) * multiplier;
-//     multiplier *= 256;
-//   }
-//   return rv;
-// }
-//
 // /*
 //  * 00000000 - end of stream
 //  * 0xxxxxxx - 1 thru 2^7 = 128

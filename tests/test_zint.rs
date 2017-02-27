@@ -4,32 +4,57 @@ mod zint {
   use std::io;
   use std::io::Seek;
   use lib4bottle;
-  use lib4bottle::ToHex;
+  use lib4bottle::{FromHex, ToHex};
 
   #[test]
   fn encode_packed_int() {
     let mut cursor = io::Cursor::new(Vec::new());
 
     cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    lib4bottle::encode_packed_int(&mut cursor, 10).unwrap();
+    lib4bottle::encode_packed_int(&mut cursor, 0).unwrap();
     assert_eq!(cursor.to_hex(), "00");
 
-    // let mut buffer = [ 0 as u8; 8 ];
-    // let foo: &mut [u8] = &mut buffer;
-    // lib4bottle::encode_packed_int(foo, 0);
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_packed_int(&mut cursor, 100).unwrap();
+    assert_eq!(cursor.to_hex(), "64");
 
-    // let mut bytes = [0 as u8; 8];
-    // let mut cursor = io::Cursor::new(&mut bytes as &mut [u8]);
-    // // let mut cursor = io::Cursor::new(Vec::new());
-    //
-    // lib4bottle::encode_packed_int(&mut cursor, 10).unwrap();
-    // let buffer = cursor.get_ref();
-    // println!("cursor pos={} buffen len={}", cursor.position(), buffer.len());
-    // println!("vec={:?}", buffer);
-    // assert_eq!(lib4bottle::bytes_to_hex(&buffer[0..(cursor.position() as usize)]), "00");
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_packed_int(&mut cursor, 129).unwrap();
+    assert_eq!(cursor.to_hex(), "81");
 
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_packed_int(&mut cursor, 127).unwrap();
+    assert_eq!(cursor.to_hex(), "7f");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_packed_int(&mut cursor, 256).unwrap();
+    assert_eq!(cursor.to_hex(), "0001");
+
+    cursor.seek(io::SeekFrom::Start(0)).unwrap();
+    lib4bottle::encode_packed_int(&mut cursor, 987654321).unwrap();
+    assert_eq!(cursor.to_hex(), "b168de3a");
+  }
+
+  #[test]
+  fn decode_packed_int() {
+    assert_eq!(lib4bottle::decode_packed_int(&mut io::Cursor::new("00".from_hex())).unwrap(), 0);
+    assert_eq!(lib4bottle::decode_packed_int(&mut io::Cursor::new("0a".from_hex())).unwrap(), 10);
+    assert_eq!(lib4bottle::decode_packed_int(&mut io::Cursor::new("ff".from_hex())).unwrap(), 255);
+    assert_eq!(lib4bottle::decode_packed_int(&mut io::Cursor::new("64".from_hex())).unwrap(), 100);
+    assert_eq!(lib4bottle::decode_packed_int(&mut io::Cursor::new("81".from_hex())).unwrap(), 129);
+    assert_eq!(lib4bottle::decode_packed_int(&mut io::Cursor::new("7f".from_hex())).unwrap(), 127);
+    assert_eq!(lib4bottle::decode_packed_int(
+      &mut io::Cursor::new("0001".from_hex())).unwrap(),
+      256
+    );
+    assert_eq!(lib4bottle::decode_packed_int(
+      &mut io::Cursor::new("b168de3a".from_hex())).unwrap(),
+      987654321
+    );
   }
 }
+
+
 // "use strict";
 //
 // import * as zint from "../../lib/lib4bottle/zint";
