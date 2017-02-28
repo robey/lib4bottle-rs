@@ -45,7 +45,7 @@ pub fn decode_packed_int<R: io::Read>(reader: &mut R) -> io::Result<u64> {
  * 1111xxxx - 2^(7+x) = any power-of-2 block size from 128 to 2^21 = 2M
  * 11111111 - end of all streams
  */
-pub fn encode_length<W: io::Write>(writer: &mut W, number: u64) -> io::Result<()> {
+pub fn encode_length<W: io::Write>(writer: &mut W, number: u32) -> io::Result<()> {
   match number {
     n if n < 128 => {
       writer.write(&[ n as u8 ])?;
@@ -80,39 +80,56 @@ pub fn encode_length<W: io::Write>(writer: &mut W, number: u64) -> io::Result<()
   }
 }
 
-// /*
-//  * Determine how many bytes will be needed to get the full length.
-//  */
-// export function lengthLength(byte) {
-//   if ((byte & 0xf0) == 0xf0 || (byte & 0x80) == 0) return 1;
-//   if ((byte & 0xc0) == 0x80) return 2;
-//   if ((byte & 0xe0) == 0xc0) return 3;
-//   if ((byte & 0xf0) == 0xe0) return 4;
-// }
-//
-// /*
-//  * Returns the length, or 0 for end-of-stream, or -1 for end of all streams.
-//  * Use `lengthLength` on the first byte to ensure that you have as many bytes
-//  * as you need.
-//  */
-// export function decodeLength(buffer) {
-//   if (buffer[0] == 0xff) return -1;
-//   if ((buffer[0] & 0x80) == 0) return buffer[0];
-//   if ((buffer[0] & 0xf0) == 0xf0) return Math.pow(2, 7 + (buffer[0] & 0xf));
-//
-//   if ((buffer[0] & 0xc0) == 0x80) {
-//     return (buffer[0] & 0x3f) + (buffer[1] << 6);
-//   }
-//
-//   if ((buffer[0] & 0xe0) == 0xc0) {
-//     return (buffer[0] & 0x3f) + (buffer[1] << 5) + (buffer[2] << 13);
-//   }
-//
-//   if ((buffer[0] & 0xf0) == 0xe0) {
-//     return (buffer[0] & 0xf) + (buffer[1] << 4) + (buffer[2] << 12) + (buffer[3] << 20);
-//   }
-// }
-//
+/*
+ * Determine how many bytes will be needed to get the full length.
+ */
+pub fn length_of_length(byte: u8) -> usize {
+  match byte {
+    b if (b & 0xf0) == 0xf0 => 1,
+    b if (b & 0x80) == 0 => 1,
+    b if (b & 0xc0) == 0x80 => 2,
+    b if (b & 0xe0) == 0xc0 => 3,
+    b if (b & 0xf0) == 0xe0 => 4,
+    _ => 0
+  }
+}
+
+pub const END_OF_STREAM: u32 = 0;
+pub const END_OF_ALL_STREAMS: u32 = 0xffffffff;
+
+/*
+ * Returns the length, or one of the two constants above.
+ * Use `length_of_length` on the first byte to ensure that you have as many
+ * bytes as you need.
+ */
+pub fn decode_length<R: io::Read>(reader: &mut R) -> io::Result<u32> {
+  let mut buffer: [u8; 4] = [ 0; 4 ];
+  reader.read_exact(&mut buffer[0..1])?;
+  let total_len = length_of_length(buffer[0]);
+  if total_len > 1 {
+    reader.read_exact(&mut buffer[1..total_len])?;
+  }
+
+  if buffer[0] == 0xff {
+    Ok(END_OF_ALL_STREAMS)
+  } else if buffer[0] & 0x80 == 0 {
+    Ok(buffer[0] as u32)
+  } else if buffer[0] & 0xf0 == 0xf0 {
+    Ok(1 << (7 + (buffer[0] & 0xf) as u32))
+  } else if buffer[0] & 0xc0 == 0x80 {
+    Ok(((buffer[0] & 0x3f) as u32) + ((buffer[1] as u32) << 6))
+  } else if buffer[0] & 0xe0 == 0xc0 {
+    Ok(((buffer[0] & 0x1f) as u32) + ((buffer[1] as u32) << 5) + ((buffer[2] as u32) << 13))
+  } else {
+    Ok(
+      ((buffer[0] & 0xf) as u32) +
+      ((buffer[1] as u32) << 4) +
+      ((buffer[2] as u32) << 12) +
+      ((buffer[3] as u32) << 20)
+    )
+  }
+}
+
 // export function readLength(stream) {
 //   return stream.readPromise(1).then(prefix => {
 //     if (prefix == null || prefix[0] == 0) return null;
@@ -141,8 +158,8 @@ pub fn encode_length<W: io::Write>(writer: &mut W, number: u64) -> io::Result<()
 // }
 
 // hacker's delight! (only works on exact powers of 2)
-fn log_base2(number: u64) -> u64 {
-  let mut x: u64 = number;
+fn log_base2(number: u32) -> u32 {
+  let mut x: u32 = number;
   x -= 1;
   x -= (x >> 1) & 0x55555555;
   x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
