@@ -1,6 +1,7 @@
 extern crate lib4bottle;
 
-mod test_zint {
+#[cfg(test)]
+mod tests {
   use std::io;
   use std::io::Seek;
   use lib4bottle::to_hex::{FromHex, ToHex};
@@ -8,31 +9,14 @@ mod test_zint {
 
   #[test]
   fn encode_packed_int() {
-    let mut cursor = io::Cursor::new(Vec::new());
+    // let mut cursor = io::Cursor::new(Vec::new());
 
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_packed_int(&mut cursor, 0).unwrap();
-    assert_eq!(cursor.to_hex(), "00");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_packed_int(&mut cursor, 100).unwrap();
-    assert_eq!(cursor.to_hex(), "64");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_packed_int(&mut cursor, 129).unwrap();
-    assert_eq!(cursor.to_hex(), "81");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_packed_int(&mut cursor, 127).unwrap();
-    assert_eq!(cursor.to_hex(), "7f");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_packed_int(&mut cursor, 256).unwrap();
-    assert_eq!(cursor.to_hex(), "0001");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_packed_int(&mut cursor, 987654321).unwrap();
-    assert_eq!(cursor.to_hex(), "b168de3a");
+    assert_eq!(zint::encode_packed_int(0).to_hex(), "00");
+    assert_eq!(zint::encode_packed_int(100).to_hex(), "64");
+    assert_eq!(zint::encode_packed_int(129).to_hex(), "81");
+    assert_eq!(zint::encode_packed_int(127).to_hex(), "7f");
+    assert_eq!(zint::encode_packed_int(256).to_hex(), "0001");
+    assert_eq!(zint::encode_packed_int(987654321).to_hex(), "b168de3a");
   }
 
   #[test]
@@ -129,6 +113,12 @@ mod test_zint {
       zint::decode_length(&mut io::Cursor::new("ff".from_hex())).unwrap(),
       zint::END_OF_ALL_STREAMS
     );
+  }
+
+  #[test]
+  #[should_panic(expected = "UnexpectedEof")]
+  fn decode_length_not_enough_bytes() {
+    zint::decode_length(&mut io::Cursor::new("81".from_hex())).unwrap();
   }
 }
 

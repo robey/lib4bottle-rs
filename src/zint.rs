@@ -6,8 +6,7 @@ use std::io;
  * - length: specialized variable-length encoding that favors powers of two
  */
 
-// returns number of bytes it wrote
-pub fn encode_packed_int<W: io::Write>(writer: &mut W, number: u64) -> io::Result<()> {
+pub fn write_packed_int<W: io::Write>(writer: &mut W, number: u64) -> io::Result<()> {
   let mut count = 0;
   let mut buffer: [u8; 8] = [ 0; 8 ];
   let mut n = number;
@@ -21,6 +20,13 @@ pub fn encode_packed_int<W: io::Write>(writer: &mut W, number: u64) -> io::Resul
   count += 1;
   writer.write_all(&buffer[0..count])?;
   Ok(())
+}
+
+pub fn encode_packed_int(number: u64) -> Vec<u8> {
+  let mut cursor = io::Cursor::new(Vec::new());
+  // unwrap is ok cuz it can' really fail
+  write_packed_int(&mut cursor, number).unwrap();
+  cursor.into_inner()
 }
 
 pub fn decode_packed_int<R: io::Read>(reader: &mut R) -> io::Result<u64> {
