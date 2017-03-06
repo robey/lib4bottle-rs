@@ -20,6 +20,18 @@ mod tests {
     assert_eq!(format!("{:?}", m), "Header(B1, N10=1000, S3=\"iron\")");
     assert_eq!(m.encode().to_hex(), "c400a802e8030c0469726f6e");
   }
+
+  #[test]
+  fn unpack() {
+    assert_eq!(
+      format!("{:?}", Header::decode("c400".from_hex().as_ref()).unwrap()),
+      "Header(B1)"
+    );
+    assert_eq!(
+      format!("{:?}", Header::decode("c400a802e803".from_hex().as_ref()).unwrap()),
+      "Header(B1, N10=1000)"
+    );
+  }
 }
 
 // "use strict";

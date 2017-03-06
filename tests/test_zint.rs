@@ -8,9 +8,23 @@ mod tests {
   use lib4bottle::zint;
 
   #[test]
-  fn encode_packed_int() {
-    // let mut cursor = io::Cursor::new(Vec::new());
+  fn bytes_needed() {
+    assert_eq!(zint::bytes_needed(1), 1);
+    assert_eq!(zint::bytes_needed(254), 1);
+    assert_eq!(zint::bytes_needed(255), 1);
+    assert_eq!(zint::bytes_needed(256), 2);
+    assert_eq!(zint::bytes_needed(1023), 2);
+    assert_eq!(zint::bytes_needed(1024), 2);
+    assert_eq!(zint::bytes_needed(16485), 2);
+    assert_eq!(zint::bytes_needed(0xffffffff), 4);
+    assert_eq!(zint::bytes_needed(0x100000000), 5);
+    assert_eq!(zint::bytes_needed(0xff0010000000), 6);
+    assert_eq!(zint::bytes_needed(0xff000010000000), 7);
+    assert_eq!(zint::bytes_needed(0xff00000010000000), 8);
+  }
 
+  #[test]
+  fn encode_packed_int() {
     assert_eq!(zint::encode_packed_int(0).to_hex(), "00");
     assert_eq!(zint::encode_packed_int(100).to_hex(), "64");
     assert_eq!(zint::encode_packed_int(129).to_hex(), "81");
@@ -21,20 +35,14 @@ mod tests {
 
   #[test]
   fn decode_packed_int() {
-    assert_eq!(zint::decode_packed_int(&mut io::Cursor::new("00".from_hex())).unwrap(), 0);
-    assert_eq!(zint::decode_packed_int(&mut io::Cursor::new("0a".from_hex())).unwrap(), 10);
-    assert_eq!(zint::decode_packed_int(&mut io::Cursor::new("ff".from_hex())).unwrap(), 255);
-    assert_eq!(zint::decode_packed_int(&mut io::Cursor::new("64".from_hex())).unwrap(), 100);
-    assert_eq!(zint::decode_packed_int(&mut io::Cursor::new("81".from_hex())).unwrap(), 129);
-    assert_eq!(zint::decode_packed_int(&mut io::Cursor::new("7f".from_hex())).unwrap(), 127);
-    assert_eq!(zint::decode_packed_int(
-      &mut io::Cursor::new("0001".from_hex())).unwrap(),
-      256
-    );
-    assert_eq!(zint::decode_packed_int(
-      &mut io::Cursor::new("b168de3a".from_hex())).unwrap(),
-      987654321
-    );
+    assert_eq!(zint::decode_packed_int("00".from_hex().as_ref()).unwrap(), 0);
+    assert_eq!(zint::decode_packed_int("0a".from_hex().as_ref()).unwrap(), 10);
+    assert_eq!(zint::decode_packed_int("ff".from_hex().as_ref()).unwrap(), 255);
+    assert_eq!(zint::decode_packed_int("64".from_hex().as_ref()).unwrap(), 100);
+    assert_eq!(zint::decode_packed_int("81".from_hex().as_ref()).unwrap(), 129);
+    assert_eq!(zint::decode_packed_int("7f".from_hex().as_ref()).unwrap(), 127);
+    assert_eq!(zint::decode_packed_int("0001".from_hex().as_ref()).unwrap(), 256);
+    assert_eq!(zint::decode_packed_int("b168de3a".from_hex().as_ref()).unwrap(), 987654321);
   }
 
   #[test]

@@ -29,7 +29,7 @@ pub fn encode_packed_int(number: u64) -> Vec<u8> {
   cursor.into_inner()
 }
 
-pub fn decode_packed_int<R: io::Read>(reader: &mut R) -> io::Result<u64> {
+pub fn read_packed_int<R: io::Read>(reader: &mut R) -> io::Result<u64> {
   let mut buffer: [u8; 1] = [ 0 ];
   let mut rv: u64 = 0;
   let mut shift: u8 = 0;
@@ -39,6 +39,10 @@ pub fn decode_packed_int<R: io::Read>(reader: &mut R) -> io::Result<u64> {
     shift += 8;
   }
   Ok(rv)
+}
+
+pub fn decode_packed_int(buffer: &[u8]) -> io::Result<u64> {
+  read_packed_int(&mut io::Cursor::new(buffer))
 }
 
 
@@ -174,4 +178,17 @@ fn log_base2(number: u32) -> u32 {
   x += x << 16;
   x >>= 24;
   x
+}
+
+pub fn bytes_needed(mut number: u64) -> usize {
+  let mut count = 1;//if (number & (number - 1)) == 0 { 0 } else { 1 };
+  let mut found = if (number & 0xffffffff00000000) == 0 { 0 } else { 4 };
+  count += found;
+  number >>= 8 * found;
+  found = if (number & 0xffff0000) == 0 { 0 } else { 2 };
+  count += found;
+  number >>= 8 * found;
+  found = if (number & 0xff00) == 0 { 0 } else { 1 };
+  count += found;
+  count
 }
