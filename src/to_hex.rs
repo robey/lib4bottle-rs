@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use std::io;
 
 pub trait ToHex {
@@ -18,6 +19,18 @@ impl ToHex for io::Cursor<Vec<u8>> {
   fn to_hex(&self) -> String {
     let slice = self.get_ref();
     slice[0..(self.position() as usize)].to_hex()
+  }
+}
+
+impl ToHex for Bytes {
+  fn to_hex(&self) -> String {
+    self.as_ref().to_hex()
+  }
+}
+
+impl<T> ToHex for Vec<T> where T: ToHex {
+  fn to_hex(&self) -> String {
+    self.iter().map(|item| item.to_hex()).collect::<Vec<String>>().join("")
   }
 }
 
