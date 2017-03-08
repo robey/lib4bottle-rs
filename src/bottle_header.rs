@@ -8,6 +8,10 @@ const KIND_BOOLEAN: u8 = 3;
 const KIND_NUMBER: u8 = 2;
 const KIND_STRING: u8 = 0;
 
+pub struct Header {
+  fields: Vec<Field>
+}
+
 enum FieldValue {
   Boolean,
   Number(u64),
@@ -17,10 +21,6 @@ enum FieldValue {
 struct Field {
   id: u8,
   value: FieldValue,
-}
-
-pub struct Header {
-  fields: Vec<Field>
 }
 
 impl Header {

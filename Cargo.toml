@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = [ "Robey Pointer <robeypointer@gmail.com>" ]
 
 [dependencies]
+futures = "0.1"
+bytes = "0.4"
 
 [profile.test]
 opt-level = 3
