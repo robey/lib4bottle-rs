@@ -55,7 +55,7 @@ pub fn decode_packed_int(buffer: &[u8]) -> io::Result<u64> {
  * 1111xxxx - 2^(7+x) = any power-of-2 block size from 128 to 2^21 = 2M
  * 11111111 - end of all streams
  */
-pub fn encode_length<W: io::Write>(writer: &mut W, number: u32) -> io::Result<()> {
+pub fn write_length<W: io::Write>(writer: &mut W, number: u32) -> io::Result<()> {
   match number {
     n if n < 128 => {
       writer.write(&[ n as u8 ])?;
@@ -88,6 +88,13 @@ pub fn encode_length<W: io::Write>(writer: &mut W, number: u32) -> io::Result<()
     }
     _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "😝"))
   }
+}
+
+pub fn encode_length(number: u32) -> Vec<u8> {
+  let mut cursor = io::Cursor::new(Vec::new());
+  // unwrap is ok cuz it can' really fail
+  write_length(&mut cursor, number).unwrap();
+  cursor.into_inner()
 }
 
 /*

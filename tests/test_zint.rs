@@ -3,7 +3,6 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod tests {
   use std::io;
-  use std::io::Seek;
   use lib4bottle::to_hex::{FromHex, ToHex};
   use lib4bottle::zint;
 
@@ -47,47 +46,16 @@ mod tests {
 
   #[test]
   fn encode_length() {
-    let mut cursor = io::Cursor::new(Vec::new());
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_length(&mut cursor, 1).unwrap();
-    assert_eq!(cursor.to_hex(), "01");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_length(&mut cursor, 100).unwrap();
-    assert_eq!(cursor.to_hex(), "64");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_length(&mut cursor, 129).unwrap();
-    assert_eq!(cursor.to_hex(), "8102");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_length(&mut cursor, 127).unwrap();
-    assert_eq!(cursor.to_hex(), "7f");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_length(&mut cursor, 256).unwrap();
-    assert_eq!(cursor.to_hex(), "f1");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_length(&mut cursor, 1024).unwrap();
-    assert_eq!(cursor.to_hex(), "f3");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_length(&mut cursor, 12345).unwrap();
-    assert_eq!(cursor.to_hex(), "d98101");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_length(&mut cursor, 3998778).unwrap();
-    assert_eq!(cursor.to_hex(), "ea43d003");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_length(&mut cursor, 87654321).unwrap();
-    assert_eq!(cursor.to_hex(), "e1fb9753");
-
-    cursor.seek(io::SeekFrom::Start(0)).unwrap();
-    zint::encode_length(&mut cursor, 1 << 21).unwrap();
-    assert_eq!(cursor.to_hex(), "fe");
+    assert_eq!(zint::encode_length(1).to_hex(), "01");
+    assert_eq!(zint::encode_length(100).to_hex(), "64");
+    assert_eq!(zint::encode_length(129).to_hex(), "8102");
+    assert_eq!(zint::encode_length(127).to_hex(), "7f");
+    assert_eq!(zint::encode_length(256).to_hex(), "f1");
+    assert_eq!(zint::encode_length(1024).to_hex(), "f3");
+    assert_eq!(zint::encode_length(12345).to_hex(), "d98101");
+    assert_eq!(zint::encode_length(3998778).to_hex(), "ea43d003");
+    assert_eq!(zint::encode_length(87654321).to_hex(), "e1fb9753");
+    assert_eq!(zint::encode_length(1 << 21).to_hex(), "fe");
   }
 
   #[test]
