@@ -57,6 +57,10 @@ pub fn decode_packed_int(buffer: &[u8]) -> io::Result<u64> {
  */
 pub fn write_length<W: io::Write>(writer: &mut W, number: u32) -> io::Result<()> {
   match number {
+    END_OF_ALL_STREAMS => {
+      writer.write(&[ 0xff ])?;
+      Ok(())
+    }
     n if n < 128 => {
       writer.write(&[ n as u8 ])?;
       Ok(())

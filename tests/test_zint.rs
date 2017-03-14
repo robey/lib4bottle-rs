@@ -59,6 +59,12 @@ mod tests {
   }
 
   #[test]
+  fn encode_special_length() {
+    assert_eq!(zint::encode_length(zint::END_OF_STREAM).to_hex(), "00");
+    assert_eq!(zint::encode_length(zint::END_OF_ALL_STREAMS).to_hex(), "ff");
+  }
+
+  #[test]
   fn length_of_length() {
     assert_eq!(zint::length_of_length(0x00), 1);
     assert_eq!(zint::length_of_length(0x01), 1);
