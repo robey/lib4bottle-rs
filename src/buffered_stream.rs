@@ -9,7 +9,7 @@ use futures::stream::Fuse;
  * then emits a single block. If `exact` is set, each block will be exactly
  * `block_size`, even if it has to split up a `Bytes`. (In theory, this
  * doesn't copy buffers, just creates two slices that refer to the same
- * buffer.) 
+ * buffer.)
  */
 
 #[must_use = "streams do nothing unless polled"]
@@ -41,18 +41,14 @@ impl<T> BufferedStream<T>
     let mut rv = Vec::<Bytes>::new();
     let mut count = 0;
 
-    println!("drain");
     while self.items.len() > 0 && count < self.block_size {
       let chunk = self.items.pop_front().unwrap();
-      println!("drain inner count={} chunk={}", count, chunk.len());
       if (count + chunk.len() <= self.block_size) || !self.exact {
-        println!("full block");
         count += chunk.len();
         self.total -= chunk.len();
         rv.push(chunk);
       } else {
         let n = self.block_size - count;
-        println!("slice {}", n);
         count += n;
         self.total -= n;
         rv.push(chunk.slice(0, n));
@@ -87,7 +83,6 @@ impl<T> Stream for BufferedStream<T>
 
         Ok(Async::Ready(Some(item))) => {
           self.total += item.iter().fold(0, |sum, buffer| { sum + buffer.len() });
-          println!("ready {} {:?}", self.total, item.clone());
           self.items.extend(item);
           if self.total >= self.block_size {
             return Ok(Async::Ready(Some(self.drain())))
