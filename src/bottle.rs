@@ -1,45 +1,43 @@
 
-use futures::{Stream, stream};
+use futures::{Stream};
 use std::io;
-use std::vec;
 use bytes::Bytes;
 
+use stream_helpers::{make_stream_1};
 use zint;
 
-type ByteStream = Stream<Item = Bytes, Error = io::Error>;
+// type ByteStream = Stream<Item = Bytes, Error = io::Error>;
 
 
-pub fn framed_stream_1<T>(s: T) -> stream::Flatten<
-  stream::Map<T, fn(Bytes) -> stream::IterStream<vec::IntoIter<Result<Bytes, io::Error>>>>
->
-  where T: Stream<Item = Bytes, Error = io::Error>
-{
-  fn frame(buffer: Bytes) -> stream::IterStream<vec::IntoIter<Result<Bytes, io::Error>>> {
-    stream::iter(vec![ Ok(Bytes::from(zint::encode_length(buffer.len() as u32))), Ok(buffer) ])
-  }
-  let x = s.map(frame as fn(Bytes) -> stream::IterStream<vec::IntoIter<Result<Bytes, io::Error>>>);
-  x.flatten()
-}
 
-pub fn framed_stream_2(s: Box<ByteStream>) -> Box<ByteStream> {
-  Box::new(s.map(|buffer| {
-    stream::iter(vec![ Ok(Bytes::from(zint::encode_length(buffer.len() as u32))), Ok(buffer) ])
-  }).flatten())
-}
-
-fn frame(buffer: Bytes) -> impl Stream<Item = Bytes, Error = io::Error> {
-  stream::iter(vec![ Ok(Bytes::from(zint::encode_length(buffer.len() as u32))), Ok(buffer) ])
-}
+// // convert a byte stream into a stream with each chunk prefixed by a length
+// // marker, suitable for embedding in a bottle.
+// pub fn framed_stream<S>(s: S) -> impl Stream<Item = Bytes, Error = io::Error>
+//   where S: Stream<Item = Bytes, Error = io::Error>
+// {
+//   let end_of_stream = make_stream_1(Bytes::from(zint::encode_length(zint::END_OF_STREAM)));
+//   s.map(|buffer| {
+//     make_stream_2(Bytes::from(zint::encode_length(buffer.len() as u32)), buffer)
+//   }).flatten().chain(end_of_stream)
+// }
 
 // convert a byte stream into a stream with each chunk prefixed by a length
 // marker, suitable for embedding in a bottle.
-pub fn framed_stream<S>(s: S) -> impl Stream<Item = Bytes, Error = io::Error>
-  where S: Stream<Item = Bytes, Error = io::Error>
+pub fn framed_vec_stream<S>(s: S) -> impl Stream<Item = Vec<Bytes>, Error = io::Error>
+  where S: Stream<Item = Vec<Bytes>, Error = io::Error>
 {
-  s.map(|buffer| {
-    stream::iter(vec![ Ok(Bytes::from(zint::encode_length(buffer.len() as u32))), Ok(buffer) ])
-  }).flatten()
+  let end_of_stream = make_stream_1(Bytes::from(zint::encode_length(zint::END_OF_STREAM)));
+  s.map(|buffers| {
+    let mut new_buffers = Vec::new();
+    let total_length: usize = buffers.iter().fold(0, |sum, buf| sum + buf.len());
+    new_buffers.push(Bytes::from(zint::encode_length(total_length as u32)));
+    new_buffers.extend(buffers);
+    new_buffers
+    // make_stream_2(Bytes::from(zint::encode_length(buffer.len() as u32)), buffer)
+  }).chain(end_of_stream)
 }
+
+
 
 /*
  * Stream transform that prefixes each buffer with a length header so it can

@@ -5,23 +5,23 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod tests {
   // use std::io;
-  use futures::{Future, Stream, stream};
-  use lib4bottle::bottle::framed_stream;
-  use lib4bottle::to_hex::{FromHex, ToHex};
   use bytes::Bytes;
+  use futures::{Future, Stream};
+  use lib4bottle::bottle::{framed_vec_stream};
+  use lib4bottle::stream_helpers::{make_stream_1};
+  use lib4bottle::to_hex::{FromHex, ToHex};
+
+  pub fn bytes123() -> Bytes {
+    Bytes::from(vec![ 1, 2, 3 ])
+  }
+
 
   #[test]
   fn write_a_small_frame() {
-    let buffer = Bytes::from(vec![ 1, 2, 3 ]);
-    let s = framed_stream(stream::iter(vec![ Ok(buffer) ]));
-    // - collect the stream into a future(vec)
-    // - wait for the future to be a result(vec)
-    // - for each vec item: pull out the bytes and hexify
-    // - collect the strings back into a vec
-    // - join to one string
+    let s = framed_vec_stream(make_stream_1(bytes123()));
     assert_eq!(
       s.collect().wait().unwrap().to_hex(),
-      "03010203"
+      "0301020300"
     );
   }
 }
