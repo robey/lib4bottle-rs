@@ -12,6 +12,12 @@ use futures::stream::Fuse;
  * buffer.)
  */
 
+pub fn buffer_stream<T>(s: T, block_size: usize, exact: bool) -> BufferedStream<T>
+  where T: Stream<Item = Vec<Bytes>, Error = io::Error>
+{
+  BufferedStream::new(s, block_size, exact)
+}
+
 #[must_use = "streams do nothing unless polled"]
 pub struct BufferedStream<T> where T: Stream<Item = Vec<Bytes>, Error = io::Error> {
   items: VecDeque<Bytes>,

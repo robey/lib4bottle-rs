@@ -17,27 +17,22 @@ pub enum BottleType {
   File = 0,
   Hashed = 1,
   Encrypted = 3,
-  Compressed = 4
+  Compressed = 4,
+  // for tests:
+  Test = 10
 }
 
-// export const MAGIC = new Buffer([ 0xf0, 0x9f, 0x8d, 0xbc ]);
-// export const VERSION = 0x00;
-
-
-// type ByteStream = Stream<Item = Bytes, Error = io::Error>;
-
-
 // generate a bottle from a type, header, and a list of streams.
-pub fn make_bottle<I, J, A>(btype: BottleType, header: &Header, streams: I)
+pub fn make_bottle<I, A>(btype: BottleType, header: &Header, streams: I)
   -> impl Stream<Item = Vec<Bytes>, Error = io::Error>
   where
-    I: IntoIterator<IntoIter = J, Item = A>,
-    J: Iterator<Item = A>,
+    I: IntoIterator<Item = A>,
     A: Stream<Item = Vec<Bytes>, Error = io::Error>
 {
-  // let x: J = streams.into_iter();
+  // FIXME: static
+  let end_of_all_streams = make_stream_1(Bytes::from(zint::encode_length(zint::END_OF_ALL_STREAMS)));
   let combined = stream::iter(streams.into_iter().map(|s| Ok::<A, io::Error>(s))).flatten();
-  make_header_stream(btype, header).chain(combined)
+  make_header_stream(btype, header).chain(combined).chain(end_of_all_streams)
 }
 
 // /*

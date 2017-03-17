@@ -6,10 +6,14 @@ extern crate lib4bottle;
 mod tests {
   // use std::io;
   use bytes::Bytes;
-  use futures::{Future, Stream};
-  use lib4bottle::bottle::{framed_vec_stream};
-  use lib4bottle::stream_helpers::{make_stream_1};
+  use futures::{Future, Stream, stream};
+  use lib4bottle::bottle::{BottleType, framed_vec_stream, make_bottle};
+  use lib4bottle::bottle_header::{Header};
+  use lib4bottle::buffered_stream::{buffer_stream};
+  use lib4bottle::stream_helpers::{make_stream_1, make_stream_4};
   use lib4bottle::to_hex::{FromHex, ToHex};
+  use std::io;
+  use std::iter;
 
   pub fn bytes123() -> Bytes {
     Bytes::from(vec![ 1, 2, 3 ])
@@ -24,21 +28,45 @@ mod tests {
       "0301020300"
     );
   }
+
+  #[test]
+  fn buffer_a_frame() {
+    let s = make_stream_4(
+      Bytes::from_static(b"he"),
+      Bytes::from_static(b"ll"),
+      Bytes::from_static(b"o sai"),
+      Bytes::from_static(b"lor")
+    );
+    let b = framed_vec_stream(buffer_stream(s, 1024, true));
+    assert_eq!(b.collect().wait().unwrap().to_hex(), "0c68656c6c6f207361696c6f7200");
+  }
+
+  #[test]
+  fn write_a_small_bottle() {
+    let mut h = Header::new();
+    h.add_number(0, 150);
+    let b = make_bottle(BottleType::Test, &h, iter::empty::<stream::Empty<Vec<Bytes>, io::Error>>());
+    let magic = "f09f8dbc0000";
+
+    assert_eq!(b.collect().wait().unwrap().to_hex(), format!("{}a003800196ff", magic));
+  }
+
+  // /   it("writes a bottle header", future(() => {
+  //     const h = new Header();
+  //     h.addNumber(0, 150);
+  //     const b = writeBottle(10, h);
+  //     b.end();
+  //     return pipeToBuffer(b).then(data => {
+  //       data.toString("hex").should.eql(`${MAGIC_STRING}a003800196ff`);
+  //     });
+  //   }));
+
 }
 
 
 
 //
 // describe("framingStream", () => {
-//   it("writes a small frame", future(() => {
-//     const fs = framingStream();
-//     const p = pipeToBuffer(fs);
-//     fs.write(new Buffer([ 1, 2, 3 ]));
-//     fs.end();
-//     return p.then(data => {
-//       data.toString("hex").should.eql("0301020300");
-//     });
-//   }));
 //
 //   it("buffers up a frame", future(() => {
 //     const bs = bufferStream();
