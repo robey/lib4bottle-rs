@@ -72,7 +72,7 @@ impl Header {
 
   pub fn encode(&self) -> Vec<u8> {
     let mut cursor = io::Cursor::new(Vec::new());
-    // unwrap is ok cuz it can' really fail
+    // unwrap is ok cuz it can't really fail
     self.write(&mut cursor).unwrap();
     cursor.into_inner()
   }

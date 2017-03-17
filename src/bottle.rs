@@ -1,104 +1,45 @@
 
-use futures::{Stream};
+use futures::{Stream, stream};
 use std::io;
+use std::iter::Iterator;
 use bytes::Bytes;
 
-use stream_helpers::{make_stream_1};
+use bottle_header::{Header};
+use stream_helpers::{make_stream_1, make_stream_3};
 use zint;
+
+static MAGIC: [u8; 4] = [ 0xf0, 0x9f, 0x8d, 0xbc ];
+const VERSION: u8 = 0;
+
+const MAX_HEADER_SIZE: usize = 4095;
+
+pub enum BottleType {
+  File = 0,
+  Hashed = 1,
+  Encrypted = 3,
+  Compressed = 4
+}
+
+// export const MAGIC = new Buffer([ 0xf0, 0x9f, 0x8d, 0xbc ]);
+// export const VERSION = 0x00;
+
 
 // type ByteStream = Stream<Item = Bytes, Error = io::Error>;
 
 
-
-// // convert a byte stream into a stream with each chunk prefixed by a length
-// // marker, suitable for embedding in a bottle.
-// pub fn framed_stream<S>(s: S) -> impl Stream<Item = Bytes, Error = io::Error>
-//   where S: Stream<Item = Bytes, Error = io::Error>
-// {
-//   let end_of_stream = make_stream_1(Bytes::from(zint::encode_length(zint::END_OF_STREAM)));
-//   s.map(|buffer| {
-//     make_stream_2(Bytes::from(zint::encode_length(buffer.len() as u32)), buffer)
-//   }).flatten().chain(end_of_stream)
-// }
-
-// convert a byte stream into a stream with each chunk prefixed by a length
-// marker, suitable for embedding in a bottle.
-pub fn framed_vec_stream<S>(s: S) -> impl Stream<Item = Vec<Bytes>, Error = io::Error>
-  where S: Stream<Item = Vec<Bytes>, Error = io::Error>
+// generate a bottle from a type, header, and a list of streams.
+pub fn make_bottle<I, J, A>(btype: BottleType, header: &Header, streams: I)
+  -> impl Stream<Item = Vec<Bytes>, Error = io::Error>
+  where
+    I: IntoIterator<IntoIter = J, Item = A>,
+    J: Iterator<Item = A>,
+    A: Stream<Item = Vec<Bytes>, Error = io::Error>
 {
-  let end_of_stream = make_stream_1(Bytes::from(zint::encode_length(zint::END_OF_STREAM)));
-  s.map(|buffers| {
-    let mut new_buffers = Vec::new();
-    let total_length: usize = buffers.iter().fold(0, |sum, buf| sum + buf.len());
-    new_buffers.push(Bytes::from(zint::encode_length(total_length as u32)));
-    new_buffers.extend(buffers);
-    new_buffers
-    // make_stream_2(Bytes::from(zint::encode_length(buffer.len() as u32)), buffer)
-  }).chain(end_of_stream)
+  // let x: J = streams.into_iter();
+  let combined = stream::iter(streams.into_iter().map(|s| Ok::<A, io::Error>(s))).flatten();
+  make_header_stream(btype, header).chain(combined)
 }
 
-
-
-/*
- * Stream transform that prefixes each buffer with a length header so it can
- * be streamed. If you want to create large frames, pipe through a
- * bufferingStream first.
- */
-// export function framingStream() {
-//   const transform = new stream.Transform({ name: "framingStream" });
-//
-//   transform._transform = (data, _, callback) => {
-//     transform.push(encodeLength(data.length));
-//     transform.push(data);
-//     callback();
-//   };
-//
-//   transform._flush = (callback) => {
-//     transform.push(END_OF_STREAM);
-//     callback();
-//   };
-//
-//   return promisify(transform, { name: "framingStream" });
-// }
-
-
-// impl futures::Sink for BottleSink {
-//   type SinkItem = futures::stream::BoxStream<Vec<u8>, io::Error>;
-//   type SinkError = io::Error;
-//
-//   pub start_send(&mut self, item: Self::SinkItem) {
-//   }
-// }
-
-
-
-// import { bufferStream, compoundStream, PullTransform, sourceStream, Transform, weld } from "stream-toolkit";
-// import { packHeader, unpackHeader } from "./bottle_header";
-// import { framingStream, unframingStream } from "./framed_stream";
-//
-// export const MAGIC = new Buffer([ 0xf0, 0x9f, 0x8d, 0xbc ]);
-// export const VERSION = 0x00;
-//
-// export const TYPE_FILE = 0;
-// export const TYPE_HASHED = 1;
-// export const TYPE_ENCRYPTED = 3;
-// export const TYPE_COMPRESSED = 4;
-//
-// const MIN_BUFFER = 1024;
-// const STREAM_BUFFER_SIZE = 256 * 1024;
-//
-// export function bottleTypeName(n) {
-//   switch (n) {
-//     case TYPE_FILE: return "file";
-//     case TYPE_HASHED: return "hashed";
-//     case TYPE_ENCRYPTED: return "encrypted";
-//     case TYPE_COMPRESSED: return "compressed";
-//     default: return n.toString();
-//   }
-// }
-//
-// const BOTTLE_END = 0xff;
-//
 // /*
 //  * Stream transform that accepts child streams and emits them as a single
 //  * bottle stream with a header.
@@ -133,22 +74,88 @@ pub fn framed_vec_stream<S>(s: S) -> impl Stream<Item = Vec<Bytes>, Error = io::
 //     writableObjectMode: true
 //   });
 // }
-//
-// function writeHeader(type, header) {
-//   if (type < 0 || type > 15) throw new Error(`Bottle type out of range: ${type}`);
-//   const buffer = packHeader(header);
-//   if (buffer.length > 4095) throw new Error(`Header too long: ${buffer.length} > 4095`);
-//   return Buffer.concat([
-//     MAGIC,
-//     new Buffer([
-//       VERSION,
-//       0,
-//       (type << 4) | ((buffer.length >> 8) & 0xf),
-//       (buffer.length & 0xff)
-//     ]),
-//     buffer
-//   ]);
+
+// // convert a byte stream into a stream with each chunk prefixed by a length
+// // marker, suitable for embedding in a bottle.
+// pub fn framed_stream<S>(s: S) -> impl Stream<Item = Bytes, Error = io::Error>
+//   where S: Stream<Item = Bytes, Error = io::Error>
+// {
+//   let end_of_stream = make_stream_1(Bytes::from(zint::encode_length(zint::END_OF_STREAM)));
+//   s.map(|buffer| {
+//     make_stream_2(Bytes::from(zint::encode_length(buffer.len() as u32)), buffer)
+//   }).flatten().chain(end_of_stream)
 // }
+
+// convert a byte stream into a stream with each chunk prefixed by a length
+// marker, suitable for embedding in a bottle.
+pub fn framed_vec_stream<S>(s: S) -> impl Stream<Item = Vec<Bytes>, Error = io::Error>
+  where S: Stream<Item = Vec<Bytes>, Error = io::Error>
+{
+  // FIXME: static
+  let end_of_stream = make_stream_1(Bytes::from(zint::encode_length(zint::END_OF_STREAM)));
+  s.map(|buffers| {
+    let mut new_buffers = Vec::with_capacity(buffers.len() + 1);
+    let total_length: usize = buffers.iter().fold(0, |sum, buf| sum + buf.len());
+    new_buffers.push(Bytes::from(zint::encode_length(total_length as u32)));
+    new_buffers.extend(buffers);
+    new_buffers
+  }).chain(end_of_stream)
+}
+
+// generate a stream that's just a bottle header (magic + header data).
+pub fn make_header_stream(btype: BottleType, header: &Header) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
+  let headerBytes = header.encode();
+  assert!(headerBytes.len() <= MAX_HEADER_SIZE);
+  let version: [u8; 4] = [
+    VERSION,
+    0,
+    ((btype as u8) << 4) | ((headerBytes.len() >> 8) & 0xf) as u8,
+    (headerBytes.len() & 0xff) as u8
+  ];
+  make_stream_3(Bytes::from_static(&MAGIC), Bytes::from(&version[..]), Bytes::from(headerBytes))
+}
+
+
+
+
+/*
+ * Stream transform that prefixes each buffer with a length header so it can
+ * be streamed. If you want to create large frames, pipe through a
+ * bufferingStream first.
+ */
+
+
+// impl futures::Sink for BottleSink {
+//   type SinkItem = futures::stream::BoxStream<Vec<u8>, io::Error>;
+//   type SinkError = io::Error;
+//
+//   pub start_send(&mut self, item: Self::SinkItem) {
+//   }
+// }
+
+
+
+// import { bufferStream, compoundStream, PullTransform, sourceStream, Transform, weld } from "stream-toolkit";
+// import { packHeader, unpackHeader } from "./bottle_header";
+// import { framingStream, unframingStream } from "./framed_stream";
+//
+//
+//
+// const MIN_BUFFER = 1024;
+// const STREAM_BUFFER_SIZE = 256 * 1024;
+//
+// export function bottleTypeName(n) {
+//   switch (n) {
+//     case TYPE_FILE: return "file";
+//     case TYPE_HASHED: return "hashed";
+//     case TYPE_ENCRYPTED: return "encrypted";
+//     case TYPE_COMPRESSED: return "compressed";
+//     default: return n.toString();
+//   }
+// }
+//
+// const BOTTLE_END = 0xff;
+//
 //
 // /*
 //  * Stream transform that accepts a byte stream and emits a header, then one

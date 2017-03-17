@@ -5,9 +5,8 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod tests {
   use bytes::Bytes;
-  use futures::{Future, Stream};
   use lib4bottle::buffered_stream::BufferedStream;
-  use lib4bottle::stream_helpers::{hex_stream, make_stream_2, make_stream_4, string_stream};
+  use lib4bottle::stream_helpers::{make_stream_2, make_stream_4, string_stream};
   use lib4bottle::to_hex::{FromHex, ToHex};
 
   #[test]
