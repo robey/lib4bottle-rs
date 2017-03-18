@@ -35,3 +35,16 @@ pub fn string_stream<T>(s: T) -> Vec<String>
     vec.iter().map(|b| String::from_utf8(b.to_vec()).unwrap()).collect::<Vec<String>>().join("")
   }).collect::<Vec<String>>()
 }
+
+// convert a stream into a single Bytes
+pub fn drain_stream<T>(s: T) -> Vec<u8>
+  where T: Stream<Item = Vec<Bytes>, Error = io::Error>
+{
+  let mut rv: Vec<u8> = Vec::new();
+  for vec in s.collect().wait().unwrap() {
+    for b in vec {
+      rv.extend(b.to_vec())
+    }
+  }
+  rv
+}

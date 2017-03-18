@@ -5,12 +5,12 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod tests {
   // use std::io;
-  use bytes::Bytes;
+  use bytes::{Bytes};
   use futures::{Future, Stream, stream};
   use lib4bottle::bottle::{BottleType, framed_vec_stream, make_bottle};
   use lib4bottle::bottle_header::{Header};
   use lib4bottle::buffered_stream::{buffer_stream};
-  use lib4bottle::stream_helpers::{make_stream_1, make_stream_4};
+  use lib4bottle::stream_helpers::{drain_stream, make_stream_1, make_stream_4};
   use lib4bottle::to_hex::{FromHex, ToHex};
   use std::io;
   use std::iter;
@@ -42,6 +42,67 @@ mod tests {
   }
 
   #[test]
+  fn write_power_of_2_frame() {
+    for block_size in vec![ 128, 1024, 1 << 18, 1 << 21 ] {
+      let mut buffer: Vec<u8> = Vec::with_capacity(block_size);
+      buffer.resize(block_size, 0);
+      let b = framed_vec_stream(make_stream_1(Bytes::from(buffer)));
+      let out = drain_stream(b);
+      assert_eq!(out.len(), block_size + 2);
+      assert_eq!(out[0], (((block_size as f32).log(2.0) as u8) & 0x1f) + (0xf0 - 7));
+      assert_eq!(out[out.len() - 1], 0);
+    }
+  }
+
+  #[test]
+  fn write_medium_frame() {
+    // < 8K
+    for block_size in vec![ 129, 1234, 8191 ] {
+      let mut buffer: Vec<u8> = Vec::with_capacity(block_size);
+      buffer.resize(block_size, 0);
+      let b = framed_vec_stream(make_stream_1(Bytes::from(buffer)));
+      let out = drain_stream(b);
+      assert_eq!(out.len(), block_size + 3);
+      assert_eq!(out[0], (block_size & 0x3f) as u8 + 0x80);
+      assert_eq!(out[1], (block_size >> 6) as u8);
+      assert_eq!(out[out.len() - 1], 0);
+    }
+  }
+
+  #[test]
+  fn write_large_frame() {
+    // < 2M
+    for block_size in vec![ 8193, 12345, 456123 ] {
+      let mut buffer: Vec<u8> = Vec::with_capacity(block_size);
+      buffer.resize(block_size, 0);
+      let b = framed_vec_stream(make_stream_1(Bytes::from(buffer)));
+      let out = drain_stream(b);
+      assert_eq!(out.len(), block_size + 4);
+      assert_eq!(out[0], (block_size & 0x1f) as u8 + 0xc0);
+      assert_eq!(out[1], ((block_size >> 5) & 0xff) as u8);
+      assert_eq!(out[2], (block_size >> 13) as u8);
+      assert_eq!(out[out.len() - 1], 0);
+    }
+  }
+
+  #[test]
+  fn write_huge_frame() {
+    // >= 2M
+    for block_size in vec![ (1 << 21) + 1, 3998778 ] {
+      let mut buffer: Vec<u8> = Vec::with_capacity(block_size);
+      buffer.resize(block_size, 0);
+      let b = framed_vec_stream(make_stream_1(Bytes::from(buffer)));
+      let out = drain_stream(b);
+      assert_eq!(out.len(), block_size + 5);
+      assert_eq!(out[0], (block_size & 0xf) as u8 + 0xe0);
+      assert_eq!(out[1], ((block_size >> 4) & 0xff) as u8);
+      assert_eq!(out[2], ((block_size >> 12) & 0xff) as u8);
+      assert_eq!(out[3], (block_size >> 20) as u8);
+      assert_eq!(out[out.len() - 1], 0);
+    }
+  }
+
+  #[test]
   fn write_a_small_bottle() {
     let mut h = Header::new();
     h.add_number(0, 150);
@@ -51,104 +112,8 @@ mod tests {
     assert_eq!(b.collect().wait().unwrap().to_hex(), format!("{}a003800196ff", magic));
   }
 
-  // /   it("writes a bottle header", future(() => {
-  //     const h = new Header();
-  //     h.addNumber(0, 150);
-  //     const b = writeBottle(10, h);
-  //     b.end();
-  //     return pipeToBuffer(b).then(data => {
-  //       data.toString("hex").should.eql(`${MAGIC_STRING}a003800196ff`);
-  //     });
-  //   }));
 
 }
-
-
-
-//
-// describe("framingStream", () => {
-//
-//   it("buffers up a frame", future(() => {
-//     const bs = bufferStream();
-//     const fs = framingStream();
-//     bs.pipe(fs);
-//     const p = pipeToBuffer(fs);
-//     bs.write(new Buffer("he"));
-//     bs.write(new Buffer("ll"));
-//     bs.write(new Buffer("o sai"));
-//     bs.write(new Buffer("lor"));
-//     bs.end();
-//     return p.then(data => {
-//       data.toString("hex").should.eql("0c68656c6c6f207361696c6f7200");
-//     });
-//   }));
-//
-//   it("writes a power-of-two frame", future(() => {
-//     return Promise.all([ 128, 1024, Math.pow(2, 18), Math.pow(2, 21) ].map(blockSize => {
-//       const fs = framingStream();
-//       const p = pipeToBuffer(fs);
-//       const b = new Buffer(blockSize);
-//       b.fill(0);
-//       fs.write(b);
-//       fs.end();
-//       return p.then(data => {
-//         data.length.should.eql(blockSize + 2);
-//         data[0].should.eql((Math.log(blockSize) / Math.log(2)) + 0xf0 - 7);
-//       });
-//     }));
-//   }));
-//
-//   it("writes a medium (< 8K) frame", future(() => {
-//     return Promise.all([ 129, 1234, 8191 ].map(blockSize => {
-//       const fs = framingStream();
-//       const p = pipeToBuffer(fs);
-//       const b = new Buffer(blockSize);
-//       b.fill(0);
-//       fs.write(b);
-//       fs.end();
-//       return p.then(data => {
-//         data.length.should.eql(blockSize + 3);
-//         data[0].should.eql((blockSize & 0x3f) + 0x80);
-//         data[1].should.eql(blockSize >> 6);
-//       });
-//     }));
-//   }));
-//
-//   it("writes a large (< 2M) frame", future(() => {
-//     return Promise.all([ 8193, 12345, 456123 ].map(blockSize => {
-//       const fs = framingStream();
-//       const p = pipeToBuffer(fs);
-//       const b = new Buffer(blockSize);
-//       b.fill(0);
-//       fs.write(b);
-//       fs.end();
-//       return p.then(data => {
-//         data.length.should.eql(blockSize + 4);
-//         data[0].should.eql((blockSize & 0x1f) + 0xc0);
-//         data[1].should.eql((blockSize >> 5) & 0xff);
-//         data[2].should.eql((blockSize >> 13));
-//       });
-//     }));
-//   }));
-//
-//   it("writes a huge (>= 2M) frame", future(() => {
-//     return Promise.all([ Math.pow(2, 21) + 1, 3998778 ].map(blockSize => {
-//       const fs = framingStream();
-//       const p = pipeToBuffer(fs);
-//       const b = new Buffer(blockSize);
-//       b.fill(0);
-//       fs.write(b);
-//       fs.end();
-//       return p.then(data => {
-//         data.length.should.eql(blockSize + 5);
-//         data[0].should.eql((blockSize & 0xf) + 0xe0);
-//         data[1].should.eql((blockSize >> 4) & 0xff);
-//         data[2].should.eql((blockSize >> 12) & 0xff);
-//         data[3].should.eql((blockSize >> 20) & 0xff);
-//       });
-//     }));
-//   }));
-// });
 
 
 
@@ -168,16 +133,7 @@ mod tests {
 //
 //
 // describe("bottleWriter", () => {
-//   it("writes a bottle header", future(() => {
-//     const h = new Header();
-//     h.addNumber(0, 150);
-//     const b = writeBottle(10, h);
-//     b.end();
-//     return pipeToBuffer(b).then(data => {
-//       data.toString("hex").should.eql(`${MAGIC_STRING}a003800196ff`);
-//     });
-//   }));
-//
+//   
 //   it("writes data", future(() => {
 //     const data = sourceStream(new Buffer("ff00ff00", "hex"));
 //     const b = writeBottle(10, new Header());
