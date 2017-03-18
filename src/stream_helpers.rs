@@ -4,6 +4,10 @@ use std::io;
 
 use to_hex::ToHex;
 
+pub fn make_stream(v: Vec<Bytes>) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
+  stream::iter(vec![ Ok(v) ])
+}
+
 pub fn make_stream_1(b1: Bytes) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
   stream::iter(vec![ Ok(vec![ b1 ]) ])
 }

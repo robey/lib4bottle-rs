@@ -5,21 +5,25 @@ use std::iter::Iterator;
 use bytes::Bytes;
 
 use bottle_header::{Header};
-use stream_helpers::{make_stream_1, make_stream_3};
+use buffered_stream::{buffer_stream};
+use stream_helpers::{make_stream, make_stream_1};
 use zint;
 
 static MAGIC: [u8; 4] = [ 0xf0, 0x9f, 0x8d, 0xbc ];
 const VERSION: u8 = 0;
 
 const MAX_HEADER_SIZE: usize = 4095;
+const MIN_BUFFER: usize = 1024;
 
+// 0 - 15, defined in the spec
 pub enum BottleType {
   File = 0,
   Hashed = 1,
   Encrypted = 3,
   Compressed = 4,
   // for tests:
-  Test = 10
+  Test = 10,
+  Test2 = 11
 }
 
 // generate a bottle from a type, header, and a list of streams.
@@ -31,44 +35,12 @@ pub fn make_bottle<I, A>(btype: BottleType, header: &Header, streams: I)
 {
   // FIXME: static
   let end_of_all_streams = make_stream_1(Bytes::from(zint::encode_length(zint::END_OF_ALL_STREAMS)));
-  let combined = stream::iter(streams.into_iter().map(|s| Ok::<A, io::Error>(s))).flatten();
+  let combined = stream::iter(streams.into_iter().map(|s| {
+    // prevent tiny packets by requiring it to buffer at least 1KB
+    Ok::<_, io::Error>(framed_vec_stream(buffer_stream(s, MIN_BUFFER, false)))
+  })).flatten();
   make_header_stream(btype, header).chain(combined).chain(end_of_all_streams)
 }
-
-// /*
-//  * Stream transform that accepts child streams and emits them as a single
-//  * bottle stream with a header.
-//  */
-// export function writeBottle(type, header, options = {}) {
-//   const streamOptions = {
-//     name: "bottleWriterGuts",
-//     writableObjectMode: true,
-//     readableObjectMode: true,
-//     highWaterMark: STREAM_BUFFER_SIZE,
-//     transform: inStream => {
-//       // prevent tiny packets by requiring it to buffer at least 1KB
-//       const buffered = bufferStream(MIN_BUFFER);
-//       const framedStream = framingStream();
-//       transform.__log("writing stream " + (inStream.__name || "?") + " into " + framedStream.__name);
-//       inStream.pipe(buffered);
-//       buffered.pipe(framedStream);
-//       return framedStream;
-//     },
-//     flush: () => {
-//       transform.__log("flush: end of bottle");
-//       return sourceStream(new Buffer([ BOTTLE_END ]));
-//     }
-//   };
-//   for (const k in options) streamOptions[k] = options[k];
-//
-//   const transform = new Transform(streamOptions);
-//   transform.push(sourceStream(writeHeader(type, header)));
-//   const outStream = compoundStream();
-//   return weld(transform, outStream, {
-//     name: `BottleWriter(${bottleTypeName(type)}, ${options.tag || ""})`,
-//     writableObjectMode: true
-//   });
-// }
 
 // // convert a byte stream into a stream with each chunk prefixed by a length
 // // marker, suitable for embedding in a bottle.
@@ -82,7 +54,8 @@ pub fn make_bottle<I, A>(btype: BottleType, header: &Header, streams: I)
 // }
 
 // convert a byte stream into a stream with each chunk prefixed by a length
-// marker, suitable for embedding in a bottle.
+// marker, suitable for embedding in a bottle. (each `Vec<Bytes>` gets a new
+// initial `Bytes`.)
 pub fn framed_vec_stream<S>(s: S) -> impl Stream<Item = Vec<Bytes>, Error = io::Error>
   where S: Stream<Item = Vec<Bytes>, Error = io::Error>
 {
@@ -107,7 +80,7 @@ pub fn make_header_stream(btype: BottleType, header: &Header) -> impl Stream<Ite
     ((btype as u8) << 4) | ((header_bytes.len() >> 8) & 0xf) as u8,
     (header_bytes.len() & 0xff) as u8
   ];
-  make_stream_3(Bytes::from_static(&MAGIC), Bytes::from(&version[..]), Bytes::from(header_bytes))
+  make_stream(vec![ Bytes::from_static(&MAGIC), Bytes::from(&version[..]), Bytes::from(header_bytes) ])
 }
 
 

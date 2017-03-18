@@ -7,9 +7,10 @@ use futures::stream::Fuse;
 /*
  * Stream<Vec<Bytes>> that buffers data until it reaches a desired block size,
  * then emits a single block. If `exact` is set, each block will be exactly
- * `block_size`, even if it has to split up a `Bytes`. (In theory, this
- * doesn't copy buffers, just creates two slices that refer to the same
- * buffer.)
+ * `block_size`, even if it has to split up a `Bytes`.
+ *
+ * In theory, this doesn't copy buffers, just creates new `Vec`s holding
+ * different sets of `Bytes`.
  */
 
 pub fn buffer_stream<T>(s: T, block_size: usize, exact: bool) -> BufferedStream<T>

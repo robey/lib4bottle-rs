@@ -107,89 +107,47 @@ mod tests {
     let mut h = Header::new();
     h.add_number(0, 150);
     let b = make_bottle(BottleType::Test, &h, iter::empty::<stream::Empty<Vec<Bytes>, io::Error>>());
-    let magic = "f09f8dbc0000";
 
-    assert_eq!(b.collect().wait().unwrap().to_hex(), format!("{}a003800196ff", magic));
+    let magic_hex = "f09f8dbc0000";
+    assert_eq!(b.collect().wait().unwrap().to_hex(), format!("{}a003800196ff", magic_hex));
   }
 
+  #[test]
+  fn write_a_small_data_bottle() {
+    let data = make_stream_1(Bytes::from("ff00ff00".from_hex()));
+    let b = make_bottle(BottleType::Test, &Header::new(), vec![ data ]);
 
+    let magic_hex = "f09f8dbc0000";
+    assert_eq!(b.collect().wait().unwrap().to_hex(), format!("{}a00004ff00ff0000ff", magic_hex));
+  }
+
+  #[test]
+  fn write_a_nested_bottle() {
+    let empty_stream = iter::empty::<stream::Empty<Vec<Bytes>, io::Error>>();
+    let b1 = make_bottle(BottleType::Test, &Header::new(), empty_stream);
+    let b2 = make_bottle(BottleType::Test2, &Header::new(), vec![ b1 ]);
+
+    let magic_hex = "f09f8dbc0000";
+    assert_eq!(b2.collect().wait().unwrap().to_hex(), format!("{}b00009{}a000ff00ff", magic_hex, magic_hex));
+  }
+
+  #[test]
+  fn write_a_bottle_of_several_streams() {
+    let data1 = make_stream_1(Bytes::from("f0f0f0".from_hex()));
+    let data2 = make_stream_1(Bytes::from("e0e0e0".from_hex()));
+    let data3 = make_stream_1(Bytes::from("cccccc".from_hex()));
+    let b = make_bottle(BottleType::Test, &Header::new(), vec![ data1, data2, data3 ]);
+
+    let magic_hex = "f09f8dbc0000";
+    assert_eq!(b.collect().wait().unwrap().to_hex(), format!("{}a00003f0f0f00003e0e0e00003cccccc00ff", magic_hex));
+  }
 }
 
 
 
 
-// import Promise from "bluebird";
-// import stream from "stream";
-// import { bufferStream, pipeToBuffer, PullTransform, sourceStream } from "stream-toolkit";
-// import { future } from "mocha-sprinkles";
-// import { Header } from "../../lib/lib4bottle/bottle_header";
-// import { readBottle, writeBottle } from "../../lib/lib4bottle/bottle_stream";
-//
-// import "should";
-// import "source-map-support/register";
-//
 // const MAGIC_STRING = "f09f8dbc0000";
 // const BASIC_MAGIC = MAGIC_STRING + "e000";
-//
-//
-// describe("bottleWriter", () => {
-//   
-//   it("writes data", future(() => {
-//     const data = sourceStream(new Buffer("ff00ff00", "hex"));
-//     const b = writeBottle(10, new Header());
-//     b.write(data);
-//     b.end();
-//     return pipeToBuffer(b).then(data => {
-//       data.toString("hex").should.eql(`${MAGIC_STRING}a00004ff00ff0000ff`);
-//     });
-//   }));
-//
-//   it("writes nested bottle data", future(() => {
-//     const b = new writeBottle(10, new Header());
-//     const b2 = new writeBottle(14, new Header());
-//     b.write(b2.pipe(bufferStream()));
-//     b.end();
-//     b2.end();
-//     return pipeToBuffer(b).then(data => {
-//       data.toString("hex").should.eql(`${MAGIC_STRING}a00009${MAGIC_STRING}e000ff00ff`);
-//     });
-//   }));
-//
-//   it("streams data", future(() => {
-//     // just to verify that the data is written as it comes in, and the event isn't triggered until completion.
-//     const data = new Buffer("c44c", "hex");
-//     const slowStream = new stream.Readable();
-//     slowStream._read = () => null;
-//     slowStream.push(data);
-//     const b = new writeBottle(14, new Header());
-//     Promise.delay(100).then(() => {
-//       slowStream.push(data);
-//       Promise.delay(100).then(() => {
-//         slowStream.push(null);
-//       });
-//     });
-//     b.write(slowStream.pipe(bufferStream()));
-//     b.end();
-//     return pipeToBuffer(b).then(data => {
-//       data.toString("hex").should.eql(`${MAGIC_STRING}e00004c44cc44c00ff`);
-//     });
-//   }));
-//
-//   it("writes several datas", future(() => {
-//     const data1 = sourceStream(new Buffer("f0f0f0", "hex"));
-//     const data2 = sourceStream(new Buffer("e0e0e0", "hex"));
-//     const data3 = sourceStream(new Buffer("cccccc", "hex"));
-//     const b = writeBottle(14, new Header());
-//     b.write(data1);
-//     b.write(data2);
-//     b.write(data3);
-//     b.end();
-//     return pipeToBuffer(b).then(data => {
-//       data.toString("hex").should.eql(`${MAGIC_STRING}e00003f0f0f00003e0e0e00003cccccc00ff`);
-//     });
-//   }));
-// });
-//
 //
 // describe("bottleReader", () => {
 //   it("validates the header", future(() => {

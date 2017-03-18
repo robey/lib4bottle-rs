@@ -7,7 +7,6 @@ mod tests {
   use bytes::Bytes;
   use lib4bottle::buffered_stream::BufferedStream;
   use lib4bottle::stream_helpers::{make_stream_2, make_stream_4, string_stream};
-  use lib4bottle::to_hex::{FromHex, ToHex};
 
   #[test]
   fn combine_small_buffers() {
