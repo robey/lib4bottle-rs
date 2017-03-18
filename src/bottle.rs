@@ -99,15 +99,15 @@ pub fn framed_vec_stream<S>(s: S) -> impl Stream<Item = Vec<Bytes>, Error = io::
 
 // generate a stream that's just a bottle header (magic + header data).
 pub fn make_header_stream(btype: BottleType, header: &Header) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
-  let headerBytes = header.encode();
-  assert!(headerBytes.len() <= MAX_HEADER_SIZE);
+  let header_bytes = header.encode();
+  assert!(header_bytes.len() <= MAX_HEADER_SIZE);
   let version: [u8; 4] = [
     VERSION,
     0,
-    ((btype as u8) << 4) | ((headerBytes.len() >> 8) & 0xf) as u8,
-    (headerBytes.len() & 0xff) as u8
+    ((btype as u8) << 4) | ((header_bytes.len() >> 8) & 0xf) as u8,
+    (header_bytes.len() & 0xff) as u8
   ];
-  make_stream_3(Bytes::from_static(&MAGIC), Bytes::from(&version[..]), Bytes::from(headerBytes))
+  make_stream_3(Bytes::from_static(&MAGIC), Bytes::from(&version[..]), Bytes::from(header_bytes))
 }
 
 
