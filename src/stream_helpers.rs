@@ -59,3 +59,14 @@ pub fn flatten_stream<S>(s: S) -> impl Stream<Item = Bytes, Error = io::Error>
 {
   s.map(|vec| stream::iter(vec.into_iter().map(|b| Ok(b)))).flatten()
 }
+
+// convert a `Vec<Bytes>` into a `Bytes`, with copying. ☹️
+pub fn flatten_bytes(vec: Vec<Bytes>) -> Bytes {
+  if vec.len() == 1 {
+    return vec[0].clone();
+  }
+  let len = vec.iter().fold(0, |sum, b| { sum + b.len() });
+  let mut rv: Vec<u8> = Vec::with_capacity(len);
+  for b in vec { rv.extend(b.as_ref()) };
+  Bytes::from(rv)
+}

@@ -1,12 +1,12 @@
-
-use futures::{Stream, stream};
+use futures::{Future, future, Stream, stream};
 use std::io;
 use std::iter::Iterator;
 use bytes::Bytes;
 
 use bottle_header::{Header};
 use buffered_stream::{buffer_stream};
-use stream_helpers::{make_stream, make_stream_1};
+use stream_helpers::{flatten_bytes, make_stream, make_stream_1};
+use stream_reader::{StreamReader};
 use zint;
 
 static MAGIC: [u8; 4] = [ 0xf0, 0x9f, 0x8d, 0xbc ];
@@ -24,6 +24,18 @@ pub enum BottleType {
   // for tests:
   Test = 10,
   Test2 = 11
+}
+
+pub fn decode_bottle_type(btype: u8) -> Result<BottleType, io::Error> {
+  match btype {
+    0 => Ok(BottleType::File),
+    1 => Ok(BottleType::Hashed),
+    3 => Ok(BottleType::Encrypted),
+    4 => Ok(BottleType::Compressed),
+    10 => Ok(BottleType::Test),
+    11 => Ok(BottleType::Test2),
+    _ => Err(unknown_bottle_type_error(btype))
+  }
 }
 
 // generate a bottle from a type, header, and a list of streams.
@@ -83,7 +95,65 @@ pub fn make_header_stream(btype: BottleType, header: &Header) -> impl Stream<Ite
   make_stream(vec![ Bytes::from_static(&MAGIC), Bytes::from(&version[..]), Bytes::from(header_bytes) ])
 }
 
+pub fn read_header<'a, S>(s: &'a mut StreamReader<S>) -> impl 'a + Future<Item = (BottleType, Header), Error = io::Error>
+  where S: Stream<Item = Bytes, Error = io::Error>
+{
+  let f = s.read_exact(8).and_then(|buffers| {
+    future::result(check_magic(flatten_bytes(buffers)))
+  });
+  f.map(|(btype, header_length)| { (btype, Header::new()) })
+  // f.and_then(move |(btype, header_length)| {
+  //   s.read_exact(header_length).and_then(|buffers| {
+  //     let buffer = flatten_bytes(buffers);
+  //     future::result(Header::decode(buffer.as_ref())).map(|header| {
+  //       (btype, header)
+  //     })
+  //   })
+  // })
+}
 
+fn check_magic(buffer: Bytes) -> Result<(BottleType, usize), io::Error> {
+  if buffer.slice(0, 4) != &MAGIC[..] {
+    return Err(bad_magic_error());
+  }
+  if buffer[4] != VERSION || buffer[5] != 0 {
+    return Err(bad_version_error(buffer[4], buffer[5]));
+  }
+  let btype = decode_bottle_type((buffer[6] >> 4) & 0xf)?;
+  let header_length = ((buffer[6] & 0xf) as usize) << 8 + (buffer[7] as usize);
+  Ok((btype, header_length))
+}
+
+fn bad_magic_error() -> io::Error {
+  io::Error::new(io::ErrorKind::InvalidInput, "Incorrect magic (not a 4bottle archive)")
+}
+
+fn bad_version_error(version: u8, extra: u8) -> io::Error {
+  io::Error::new(io::ErrorKind::InvalidInput, format!("Incompatible version: {}, {}", version, extra))
+}
+
+fn unknown_bottle_type_error(btype: u8) -> io::Error {
+  io::Error::new(io::ErrorKind::InvalidInput, format!("Unknown bottle type: {}", btype))
+}
+
+// function readHeader(transform) {
+//   transform.__log("readBottleHeader");
+//   return transform.get(8).then(buffer => {
+//     if (!buffer || buffer.length < 8) throw new Error("End of stream");
+//     for (let i = 0; i < 4; i++) {
+//       if (buffer[i] != MAGIC[i]) throw new Error("Incorrect magic (not a 4bottle archive)");
+//     }
+//     if (buffer[4] != VERSION) throw new Error(`Incompatible version: ${buffer[4].toString(16)}`);
+//     if (buffer[5] != 0) throw new Error(`Incompatible flags: ${buffer[5].toString(16)}`);
+//     const type = (buffer[6] >> 4) & 0xf;
+//     const headerLength = ((buffer[6] & 0xf) * 256) + (buffer[7] & 0xff);
+//     return transform.get(headerLength).then(headerBuffer => {
+//       const rv = { type, header: unpackHeader(headerBuffer || new Buffer(0)) };
+//       if (transform.__debug) transform.__log("readBottleHeader -> " + type + ", " + rv.header.toString());
+//       return rv;
+//     });
+//   });
+// }
 
 
 /*
@@ -158,21 +228,3 @@ pub fn make_header_stream(btype: BottleType, header: &Header) -> impl Stream<Ite
 //   }
 // }
 //
-// function readHeader(transform) {
-//   transform.__log("readBottleHeader");
-//   return transform.get(8).then(buffer => {
-//     if (!buffer || buffer.length < 8) throw new Error("End of stream");
-//     for (let i = 0; i < 4; i++) {
-//       if (buffer[i] != MAGIC[i]) throw new Error("Incorrect magic (not a 4bottle archive)");
-//     }
-//     if (buffer[4] != VERSION) throw new Error(`Incompatible version: ${buffer[4].toString(16)}`);
-//     if (buffer[5] != 0) throw new Error(`Incompatible flags: ${buffer[5].toString(16)}`);
-//     const type = (buffer[6] >> 4) & 0xf;
-//     const headerLength = ((buffer[6] & 0xf) * 256) + (buffer[7] & 0xff);
-//     return transform.get(headerLength).then(headerBuffer => {
-//       const rv = { type, header: unpackHeader(headerBuffer || new Buffer(0)) };
-//       if (transform.__debug) transform.__log("readBottleHeader -> " + type + ", " + rv.header.toString());
-//       return rv;
-//     });
-//   });
-// }
