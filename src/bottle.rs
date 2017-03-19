@@ -122,9 +122,6 @@ pub fn make_header_stream(btype: BottleType, header: &Header) -> impl Stream<Ite
 //   }
 // }
 //
-// const BOTTLE_END = 0xff;
-//
-//
 // /*
 //  * Stream transform that accepts a byte stream and emits a header, then one
 //  * or more child streams.
