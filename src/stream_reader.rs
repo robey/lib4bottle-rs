@@ -47,7 +47,7 @@ pub fn stream_read_buffered<S>(s: S, block_size: usize)
 
 // (stream, count, at_most, at_least) -> (vec, stream)
 // any remainder has been prefixed back into the returned stream.
-pub fn read_from_stream<S>(s: S, count: usize, at_most: bool, at_least: bool)
+fn read_from_stream<S>(s: S, count: usize, at_most: bool, at_least: bool)
   -> impl Future<Item = (Vec<Bytes>, impl Stream<Item = Bytes, Error = io::Error>), Error = io::Error>
   where S: Stream<Item = Bytes, Error = io::Error>
 {
@@ -58,7 +58,7 @@ pub fn read_from_stream<S>(s: S, count: usize, at_most: bool, at_least: bool)
 }
 
 // lowest-level call. perform a read, then return the read, any remainder, and the original stream.
-pub fn read_from_stream_raw<S>(s: S, count: usize, at_most: bool, at_least: bool)
+fn read_from_stream_raw<S>(s: S, count: usize, at_most: bool, at_least: bool)
   -> impl Future<Item = (Vec<Bytes>, Option<Bytes>, S), Error = io::Error>
   where S: Stream<Item = Bytes, Error = io::Error>
 {
