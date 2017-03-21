@@ -4,13 +4,11 @@ use futures::stream::{Fuse};
 use std::collections::VecDeque;
 use std::io;
 
-/*
- * Read exactly `count` bytes from a stream of `Bytes` objects, returning a
- * `Vec<Bytes>` containing the cumulative buffers totalling exactly the
- * desired bytes, and a new `Stream` representing everything afterwards.
- * If not enough bytes are available on the stream before EOF, an EOF error
- * is returned.
- */
+/// Read exactly `count` bytes from a stream of `Bytes` objects, returning a
+/// `Vec<Bytes>` containing the cumulative buffers totalling exactly the
+/// desired bytes, and a new `Stream` representing everything afterwards.
+/// If not enough bytes are available on the stream before EOF, an EOF error
+/// is returned.
 pub fn stream_read_exact<S>(s: S, count: usize)
   -> impl Future<Item = (Vec<Bytes>, impl Stream<Item = Bytes, Error = io::Error>), Error = io::Error>
   where S: Stream<Item = Bytes, Error = io::Error>
@@ -18,12 +16,10 @@ pub fn stream_read_exact<S>(s: S, count: usize)
   read_from_stream(s, count, true, true)
 }
 
-/*
- * Read no more than `count` bytes from a stream of `Bytes` objects, returning
- * a `Vec<Bytes>` containing the cumulative buffers totalling up to (but no
- * more than) the desired bytes, and a new `Stream` representing everything
- * afterwards. If fewer bytes are returned, the stream hit EOF.
- */
+/// Read no more than `count` bytes from a stream of `Bytes` objects, returning
+/// a `Vec<Bytes>` containing the cumulative buffers totalling up to (but no
+/// more than) the desired bytes, and a new `Stream` representing everything
+/// afterwards. If fewer bytes are returned, the stream hit EOF.
 pub fn stream_read<S>(s: S, count: usize)
   -> impl Future<Item = (Vec<Bytes>, impl Stream<Item = Bytes, Error = io::Error>), Error = io::Error>
   where S: Stream<Item = Bytes, Error = io::Error>
@@ -31,13 +27,11 @@ pub fn stream_read<S>(s: S, count: usize)
   read_from_stream(s, count, true, false)
 }
 
-/*
- * Read at least `count` bytes from a stream of `Bytes` objects, if possible,
- * returning a `Vec<Bytes>` containing the cumulative buffers, and a new
- * `Stream` representing everything afterwards. If fewer bytes are returned,
- * the stream hit EOF. More bytes may be returned if it would avoid splitting
- * a `Bytes` object.
- */
+/// Read at least `count` bytes from a stream of `Bytes` objects, if possible,
+/// returning a `Vec<Bytes>` containing the cumulative buffers, and a new
+/// `Stream` representing everything afterwards. If fewer bytes are returned,
+/// the stream hit EOF. More bytes may be returned if it would avoid splitting
+/// a `Bytes` object.
 pub fn stream_read_buffered<S>(s: S, block_size: usize)
   -> impl Future<Item = (Vec<Bytes>, impl Stream<Item = Bytes, Error = io::Error>), Error = io::Error>
   where S: Stream<Item = Bytes, Error = io::Error>
@@ -68,8 +62,7 @@ fn read_from_stream_raw<S>(s: S, count: usize, at_most: bool, at_least: bool)
     at_most: at_most,
     at_least: at_least,
     saved: VecDeque::new(),
-    total_saved: 0,
-    error: None
+    total_saved: 0
   }
 }
 
@@ -82,8 +75,7 @@ struct StreamReader<S> where S: Stream<Item = Bytes, Error = io::Error> {
 
   // internal state:
   saved: VecDeque<Bytes>,
-  total_saved: usize,
-  error: Option<io::Error>
+  total_saved: usize
 }
 
 impl<S> StreamReader<S> where S: Stream<Item = Bytes, Error = io::Error> {
@@ -143,15 +135,6 @@ impl<S> Future for StreamReader<S> where S: Stream<Item = Bytes, Error = io::Err
         return Ok(Async::Ready(self.complete()))
       }
 
-      if let Some(error) = self.error.take() {
-        // if there's no minimum len, drain the remainder before reporting the error.
-        if self.saved.len() > 0 && !self.at_least {
-          return Ok(Async::Ready(self.complete()));
-        } else {
-          return Err(error);
-        }
-      }
-
       match self.stream.as_mut().expect("polling stream twice").poll() {
         Ok(Async::NotReady) => {
           return Ok(Async::NotReady);
@@ -173,11 +156,10 @@ impl<S> Future for StreamReader<S> where S: Stream<Item = Bytes, Error = io::Err
         }
 
         // in rust streams, errors float downsteam as if they were items.
-        // it's really fucking weird. mimic the streams library by allowing
-        // any buffered data to be processed before puking the error.
+        // i don't believe in that, so treat any error as if the stream has
+        // crashed.
         Err(error) => {
-          self.error = Some(error);
-          // fall through to drain all the pre-error buffers.
+          return Err(error);
         }
       }
     }

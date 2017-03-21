@@ -3,6 +3,9 @@
 extern crate bytes;
 extern crate futures;
 
+#[macro_use]
+extern crate lazy_static;
+
 pub mod zint;
 pub mod bottle_header;
 pub mod bottle;
