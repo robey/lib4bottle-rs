@@ -2,14 +2,25 @@ use bytes::Bytes;
 use futures::{Future, Stream, stream};
 use std::io;
 
+use stream_reader::{ByteFrame};
 use to_hex::ToHex;
 
-pub fn make_stream(v: Vec<Bytes>) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
-  stream::iter(vec![ Ok(v) ])
+pub fn make_framed_stream_1(b1: Bytes) -> impl Stream<Item = ByteFrame, Error = io::Error> {
+  let length = b1.len();
+  stream::iter(vec![ Ok(ByteFrame::new(vec![ b1 ], length)) ])
 }
 
-pub fn make_stream_1(b1: Bytes) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
-  stream::iter(vec![ Ok(vec![ b1 ]) ])
+pub fn make_framed_stream_3(b1: Bytes, b2: Bytes, b3: Bytes) -> impl Stream<Item = ByteFrame, Error = io::Error> {
+  let length = b1.len() + b2.len() + b3.len();
+  stream::iter(vec![ Ok(ByteFrame::new(vec![ b1, b2, b3 ], length)) ])
+}
+
+pub fn make_stream(v: Vec<Bytes>) -> impl Stream<Item = Bytes, Error = io::Error> {
+  stream::iter(v.into_iter().map(|b| Ok(b)))
+}
+
+pub fn make_stream_1(b1: Bytes) -> impl Stream<Item = Bytes, Error = io::Error> {
+  stream::iter(vec![ Ok(b1) ])
 }
 
 pub fn make_stream_2(b1: Bytes, b2: Bytes) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
