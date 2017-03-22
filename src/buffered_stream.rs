@@ -1,115 +1,49 @@
 use bytes::Bytes;
-use std::collections::VecDeque;
 use std::io;
-use futures::{Async, Poll, Stream};
-use futures::stream::Fuse;
+use futures::{Async, Future, Poll, Stream};
 
-/*
- * Stream<Vec<Bytes>> that buffers data until it reaches a desired block size,
- * then emits a single block. If `exact` is set, each block will be exactly
- * `block_size`, even if it has to split up a `Bytes`.
- *
- * In theory, this doesn't copy buffers, just creates new `Vec`s holding
- * different sets of `Bytes`.
- */
+use stream_reader::{ByteFrame, StreamReader, StreamReaderMode, StreamReaderResult};
 
-pub fn buffer_stream<T>(s: T, block_size: usize, exact: bool) -> BufferedStream<T>
-  where T: Stream<Item = Vec<Bytes>, Error = io::Error>
-{
-  BufferedStream::new(s, block_size, exact)
-}
-
+/// `Stream<Bytes>` that buffers data until it reaches a desired block size,
+/// then emits a single `ByteFrame` (a vector of `Bytes`). If `exact` is set,
+/// each block will be `block_size` bytes at most, even if it has to split up
+/// a `Bytes`. If we hit the end of the stream, the final block may be
+/// smaller.
 #[must_use = "streams do nothing unless polled"]
-pub struct BufferedStream<T> where T: Stream<Item = Vec<Bytes>, Error = io::Error> {
-  items: VecDeque<Bytes>,
-  total: usize,
-  err: Option<io::Error>,
-  stream: Fuse<T>,
+pub struct BufferedStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
+  stream: Option<StreamReader<S>>,
   block_size: usize,
-  exact: bool
+  mode: StreamReaderMode
 }
 
-impl<T> BufferedStream<T>
-  where T: Stream<Item = Vec<Bytes>, Error = io::Error>
+impl<S> BufferedStream<S>
+  where S: Stream<Item = Bytes, Error = io::Error>
 {
-  pub fn new(s: T, block_size: usize, exact: bool) -> BufferedStream<T> {
+  pub fn new(s: S, block_size: usize, exact: bool) -> BufferedStream<S> {
     assert!(block_size > 0);
+    let mode = if exact { StreamReaderMode::AtMost } else { StreamReaderMode::Lazy };
     BufferedStream {
-      items: VecDeque::new(),
-      total: 0,
-      err: None,
-      stream: s.fuse(),
+      stream: Some(StreamReader::read(s, block_size, mode, None)),
       block_size: block_size,
-      exact: exact
+      mode: mode
     }
-  }
-
-  fn drain(&mut self) -> Vec<Bytes> {
-    let mut rv = Vec::<Bytes>::new();
-    let mut count = 0;
-
-    while self.items.len() > 0 && count < self.block_size {
-      let chunk = self.items.pop_front().unwrap();
-      if (count + chunk.len() <= self.block_size) || !self.exact {
-        count += chunk.len();
-        self.total -= chunk.len();
-        rv.push(chunk);
-      } else {
-        let n = self.block_size - count;
-        count += n;
-        self.total -= n;
-        rv.push(chunk.slice(0, n));
-        self.items.push_front(chunk.slice_from(n));
-      }
-    }
-
-    rv
   }
 }
 
-impl<T> Stream for BufferedStream<T>
-  where T: Stream<Item = Vec<Bytes>, Error = io::Error>
+impl<S> Stream for BufferedStream<S>
+  where S: Stream<Item = Bytes, Error = io::Error>
 {
-  type Item = Vec<Bytes>;
+  type Item = ByteFrame;
   type Error = io::Error;
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-    if let Some(err) = self.err.take() {
-      return Err(err)
-    }
-
-    if self.total >= self.block_size {
-      return Ok(Async::Ready(Some(self.drain())))
-    }
-
-    loop {
-      match self.stream.poll() {
-        Ok(Async::NotReady) => {
-          return Ok(Async::NotReady);
-        }
-
-        Ok(Async::Ready(Some(item))) => {
-          self.total += item.iter().fold(0, |sum, buffer| { sum + buffer.len() });
-          self.items.extend(item);
-          if self.total >= self.block_size {
-            return Ok(Async::Ready(Some(self.drain())))
-          }
-          // otherwise, fall thru and try for more.
-        }
-
-        Ok(Async::Ready(None)) => {
-          return Ok(Async::Ready(if self.items.len() > 0 { Some(self.drain()) } else { None }))
-        }
-
-        // mimic streams lib: send anything queued up first.
-        Err(e) => {
-          if self.items.len() == 0 {
-            return Err(e)
-          } else {
-            self.err = Some(e);
-            return Ok(Async::Ready(Some(self.drain())))
-          }
-        }
+    match self.stream.as_mut().expect("polling stream twice").poll() {
+      Err(e) => Err(e),
+      Ok(Async::NotReady) => Ok(Async::NotReady),
+      Ok(Async::Ready(result)) => {
+        let StreamReaderResult { frame, remainder, stream } = result;
+        self.stream = Some(StreamReader::read(stream, self.block_size, self.mode, remainder));
+        if frame.length == 0 { Ok(Async::Ready(None)) } else { Ok(Async::Ready(Some(frame))) }
       }
     }
   }

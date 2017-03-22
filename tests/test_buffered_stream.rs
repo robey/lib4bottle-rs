@@ -6,7 +6,7 @@ extern crate lib4bottle;
 mod tests {
   use bytes::Bytes;
   use lib4bottle::buffered_stream::BufferedStream;
-  use lib4bottle::stream_helpers::{make_stream_2, make_stream_4, string_stream};
+  use lib4bottle::stream_helpers::{flatten_stream, make_stream_2, make_stream_4, pack_stream, string_stream};
 
   #[test]
   fn combine_small_buffers() {
@@ -17,7 +17,7 @@ mod tests {
       Bytes::from_static(b"ty!")
     );
     let b = BufferedStream::new(s, 1024, false);
-    assert_eq!(string_stream(b), vec![ "hellokitty!" ]);
+    assert_eq!(string_stream(pack_stream(b)), vec![ "hellokitty!" ]);
   }
 
   #[test]
@@ -29,7 +29,7 @@ mod tests {
       Bytes::from_static(b"ty!")
     );
     let b = BufferedStream::new(s, 5, false);
-    assert_eq!(string_stream(b), vec![ "hellok", "itty!" ]);
+    assert_eq!(string_stream(pack_stream(b)), vec![ "hellok", "itty!" ]);
   }
 
   #[test]
@@ -39,6 +39,6 @@ mod tests {
       Bytes::from_static(b"okittyhowareyou!")
     );
     let b = BufferedStream::new(s, 5, true);
-    assert_eq!(string_stream(b), vec![ "hello", "kitty", "howar", "eyou!" ]);
+    assert_eq!(string_stream(pack_stream(b)), vec![ "hello", "kitty", "howar", "eyou!" ]);
   }
 }

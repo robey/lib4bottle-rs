@@ -4,7 +4,7 @@ use futures::stream::{Fuse};
 use std::collections::VecDeque;
 use std::io;
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum StreamReaderMode {
   /// Return exactly the number of bytes requested, no more, no less. If
   /// there aren't enough bytes before the end of the stream, return an error.
@@ -42,16 +42,17 @@ impl<S> StreamReader<S> where S: Stream<Item = Bytes, Error = io::Error> {
   /// size. This remainder can be passed into future calls as the prefix, or
   /// merged back into the original stream by calling `merge` on the result.
   pub fn read(s: S, count: usize, mode: StreamReaderMode, prefix: Option<Bytes>)
-    -> impl Future<Item = StreamReaderResult<S>, Error = io::Error>
+    -> StreamReader<S>
   {
     let mut saved = VecDeque::new();
+    let total_saved = prefix.clone().map_or(0, |b| b.len());
     saved.extend(prefix.into_iter());
     StreamReader {
       stream: Some(s.fuse()),
       count: count,
       mode: mode,
       saved: saved,
-      total_saved: 0
+      total_saved: total_saved
     }
   }
 

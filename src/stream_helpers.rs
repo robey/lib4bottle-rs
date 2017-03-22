@@ -23,16 +23,16 @@ pub fn make_stream_1(b1: Bytes) -> impl Stream<Item = Bytes, Error = io::Error> 
   stream::iter(vec![ Ok(b1) ])
 }
 
-pub fn make_stream_2(b1: Bytes, b2: Bytes) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
-  stream::iter(vec![ Ok(vec![ b1 ]), Ok(vec![ b2 ]) ])
+pub fn make_stream_2(b1: Bytes, b2: Bytes) -> impl Stream<Item = Bytes, Error = io::Error> {
+  stream::iter(vec![ Ok(b1), Ok(b2) ])
 }
 
-pub fn make_stream_3(b1: Bytes, b2: Bytes, b3: Bytes) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
-  stream::iter(vec![ Ok(vec![ b1 ]), Ok(vec![ b2 ]), Ok(vec![ b3 ]) ])
-}
+// pub fn make_stream_3(b1: Bytes, b2: Bytes, b3: Bytes) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
+//   stream::iter(vec![ Ok(vec![ b1 ]), Ok(vec![ b2 ]), Ok(vec![ b3 ]) ])
+// }
 
-pub fn make_stream_4(b1: Bytes, b2: Bytes, b3: Bytes, b4: Bytes) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
-  stream::iter(vec![ Ok(vec![ b1 ]), Ok(vec![ b2 ]), Ok(vec![ b3 ]), Ok(vec![ b4 ]) ])
+pub fn make_stream_4(b1: Bytes, b2: Bytes, b3: Bytes, b4: Bytes) -> impl Stream<Item = Bytes, Error = io::Error> {
+  stream::iter(vec![ Ok(b1), Ok(b2), Ok(b3), Ok(b4) ])
 }
 
 // convert a stream into a vector of hex output (for tests)
@@ -44,10 +44,10 @@ pub fn hex_stream<T>(s: T) -> Vec<String>
 
 // convert a stream into a vector of string output (for tests)
 pub fn string_stream<T>(s: T) -> Vec<String>
-  where T: Stream<Item = Vec<Bytes>, Error = io::Error>
+  where T: Stream<Item = Bytes, Error = io::Error>
 {
-  s.collect().wait().unwrap().iter().map(|vec| {
-    vec.iter().map(|b| String::from_utf8(b.to_vec()).unwrap()).collect::<Vec<String>>().join("")
+  s.collect().wait().unwrap().iter().map(|b| {
+    String::from_utf8(b.to_vec()).unwrap()
   }).collect::<Vec<String>>()
 }
 
@@ -64,11 +64,20 @@ pub fn drain_stream<S>(s: S) -> Vec<u8>
   rv
 }
 
-// convert a stream of `Vec<Bytes>` into a stream of `Bytes`
+/// Convert a stream of `ByteFrame` into a stream of `Bytes` without copying.
 pub fn flatten_stream<S>(s: S) -> impl Stream<Item = Bytes, Error = io::Error>
-  where S: Stream<Item = Vec<Bytes>, Error = io::Error>
+  where S: Stream<Item = ByteFrame, Error = io::Error>
 {
-  s.map(|vec| stream::iter(vec.into_iter().map(|b| Ok(b)))).flatten()
+  s.map(|frame| stream::iter(frame.vec.into_iter().map(|b| Ok(b)))).flatten()
+}
+
+/// Convert a stream of `ByteFrame` into a stream of `Bytes` by copying each
+/// frame into a new single buffer. This is woefully ineffecient and useful
+/// primarily to verify tests.
+pub fn pack_stream<S>(s: S) -> impl Stream<Item = Bytes, Error = io::Error>
+  where S: Stream<Item = ByteFrame, Error = io::Error>
+{
+  s.map(|frame| flatten_bytes(frame.vec))
 }
 
 // convert a `Vec<Bytes>` into a `Bytes`, with copying. ☹️
