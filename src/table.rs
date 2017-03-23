@@ -8,7 +8,11 @@ const KIND_BOOLEAN: u8 = 3;
 const KIND_NUMBER: u8 = 2;
 const KIND_STRING: u8 = 0;
 
-pub struct Header {
+/// An unordered set of TLV fields, where:
+///   - type can be only boolean, unsigned int, or UTF-8 string
+///   - length (of strings) can't exceed 1023 bytes
+///   - key is a small int, from 0 - 15, per type
+pub struct Table {
   fields: Vec<Field>
 }
 
@@ -23,21 +27,24 @@ struct Field {
   value: FieldValue,
 }
 
-impl Header {
-  pub fn new() -> Header {
-    Header { fields: Vec::new() }
+impl Table {
+  pub fn new() -> Table {
+    Table { fields: Vec::new() }
   }
 
+  /// Add a `true` boolean value. (False values are false by omission.)
   pub fn add_bool(&mut self, id: u8) {
     assert!(id <= 15);
     self.fields.push(Field { id: id, value: FieldValue::Boolean });
   }
 
+  /// Add a u64 as a number.
   pub fn add_number(&mut self, id: u8, value: u64) {
     assert!(id <= 15);
     self.fields.push(Field { id: id, value: FieldValue::Number(value) });
   }
 
+  /// Add a string.
   pub fn add_string(&mut self, id: u8, value: String) {
     assert!(id <= 15);
     self.fields.push(Field { id: id, value: FieldValue::String(value) });
@@ -77,8 +84,8 @@ impl Header {
     cursor.into_inner()
   }
 
-  pub fn decode(buffer: &[u8]) -> io::Result<Header> {
-    let mut header = Header::new();
+  pub fn decode(buffer: &[u8]) -> io::Result<Table> {
+    let mut table = Table::new();
     let mut i: usize = 0;
     while i < buffer.len() {
       if i + 2 > buffer.len() { return Err(truncated_error()) }
@@ -95,16 +102,16 @@ impl Header {
         KIND_STRING => FieldValue::String(str::from_utf8(content).map_err(convert_error)?.to_string()),
         _ => return Err(unknown_kind_error())
       };
-      header.fields.push(Field { id: id, value: value });
+      table.fields.push(Field { id: id, value: value });
       i += length;
     }
-    Ok(header)
+    Ok(table)
   }
 }
 
-impl fmt::Debug for Header {
+impl fmt::Debug for Table {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "Header({})", self.fields.iter().map(|f| match f.value {
+    write!(f, "Table({})", self.fields.iter().map(|f| match f.value {
       FieldValue::Boolean => format!("B{}", f.id),
       FieldValue::Number(value) => format!("N{}={}", f.id, value),
       FieldValue::String(ref value) => format!("S{}={:?}", f.id, value)
@@ -118,7 +125,7 @@ fn convert_error(e: str::Utf8Error) -> io::Error {
 }
 
 fn truncated_error() -> io::Error {
-  io::Error::new(io::ErrorKind::UnexpectedEof, "Truncated header")
+  io::Error::new(io::ErrorKind::UnexpectedEof, "Truncated header table")
 }
 
 fn unknown_kind_error() -> io::Error {
