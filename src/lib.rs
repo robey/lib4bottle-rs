@@ -6,15 +6,17 @@ extern crate futures;
 #[macro_use]
 extern crate lazy_static;
 
-pub mod zint;
-pub mod bottle_header;
-pub mod bottle;
-// pub mod compound_stream;
-// pub mod bytes_stream;
+// these could really be in a shared library somewhere:
 pub mod buffered_stream;
-// pub mod byte_stream;
+pub mod hex;
 pub mod stream_helpers;
 pub mod stream_reader;
 
-pub mod to_hex;
-pub use to_hex::{FromHex, ToHex};
+// intrinsic to 4bottle format:
+pub mod header;
+pub mod table;
+pub mod zint;
+// pub mod bottle;
+// pub mod compound_stream;
+// pub mod bytes_stream;
+// pub mod byte_stream;
