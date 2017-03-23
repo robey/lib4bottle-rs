@@ -4,7 +4,7 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod tests {
   use bytes::{Bytes};
-  use lib4bottle::to_hex::{FromHex, ToHex};
+  use lib4bottle::hex::{FromHex, ToHex};
   use lib4bottle::table::Table;
 
   #[test]

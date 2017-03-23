@@ -1,3 +1,4 @@
+use bytes::{Bytes};
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -12,6 +13,8 @@ const KIND_STRING: u8 = 0;
 ///   - type can be only boolean, unsigned int, or UTF-8 string
 ///   - length (of strings) can't exceed 1023 bytes
 ///   - key is a small int, from 0 - 15, per type
+///
+/// This is used to store metadata in the bottle header.
 pub struct Table {
   fields: Vec<Field>
 }
@@ -77,14 +80,14 @@ impl Table {
     Ok(())
   }
 
-  pub fn encode(&self) -> Vec<u8> {
+  pub fn encode(&self) -> Bytes {
     let mut cursor = io::Cursor::new(Vec::new());
     // unwrap is ok cuz it can't really fail
     self.write(&mut cursor).unwrap();
-    cursor.into_inner()
+    Bytes::from(cursor.into_inner())
   }
 
-  pub fn decode(buffer: &[u8]) -> io::Result<Table> {
+  pub fn decode(buffer: Bytes) -> io::Result<Table> {
     let mut table = Table::new();
     let mut i: usize = 0;
     while i < buffer.len() {
