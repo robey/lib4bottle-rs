@@ -9,16 +9,16 @@ mod tests {
 
   #[test]
   fn pack() {
-    let mut m = Table::new();
-    m.add_bool(1);
-    assert_eq!(format!("{:?}", m), "Table(B1)");
-    assert_eq!(m.encode().to_hex(), "c400");
-    m.add_number(10, 1000);
-    assert_eq!(format!("{:?}", m), "Table(B1, N10=1000)");
-    assert_eq!(m.encode().to_hex(), "c400a802e803");
-    m.add_string(3, String::from("iron"));
-    assert_eq!(format!("{:?}", m), "Table(B1, N10=1000, S3=\"iron\")");
-    assert_eq!(m.encode().to_hex(), "c400a802e8030c0469726f6e");
+    let mut t = Table::new();
+    t.add_bool(1);
+    assert_eq!(format!("{:?}", t), "Table(B1)");
+    assert_eq!(t.encode().to_hex(), "c400");
+    t.add_number(10, 1000);
+    assert_eq!(format!("{:?}", t), "Table(B1, N10=1000)");
+    assert_eq!(t.encode().to_hex(), "c400a802e803");
+    t.add_string(3, String::from("iron"));
+    assert_eq!(format!("{:?}", t), "Table(B1, N10=1000, S3=\"iron\")");
+    assert_eq!(t.encode().to_hex(), "c400a802e8030c0469726f6e");
   }
 
   #[test]
