@@ -3,7 +3,7 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod tests {
   use std::io;
-  use lib4bottle::to_hex::{FromHex, ToHex};
+  use lib4bottle::hex::{FromHex, ToHex};
   use lib4bottle::zint;
 
   #[test]
@@ -103,29 +103,3 @@ mod tests {
     zint::decode_length(&mut io::Cursor::new("81".from_hex())).unwrap();
   }
 }
-
-
-// "use strict";
-//
-// import * as zint from "../../lib/lib4bottle/zint";
-//
-// import "should";
-// import "source-map-support/register";
-//
-// describe("zint", () => {
-//
-//
-//   it("read length", () => {
-//     zint.decodeLength(new Buffer("00", "hex")).should.eql(0);
-//     zint.decodeLength(new Buffer("01", "hex")).should.eql(1);
-//     zint.decodeLength(new Buffer("64", "hex")).should.eql(100);
-//     zint.decodeLength(new Buffer("8102", "hex")).should.eql(129);
-//     zint.decodeLength(new Buffer("7f", "hex")).should.eql(127);
-//     zint.decodeLength(new Buffer("f1", "hex")).should.eql(256);
-//     zint.decodeLength(new Buffer("f3", "hex")).should.eql(1024);
-//     zint.decodeLength(new Buffer("d98101", "hex")).should.eql(12345);
-//     zint.decodeLength(new Buffer("ea43d003", "hex")).should.eql(3998778);
-//     zint.decodeLength(new Buffer("fe", "hex")).should.eql(Math.pow(2, 21));
-//     zint.decodeLength(new Buffer("ff", "hex")).should.eql(-1);
-//   });
-// });

@@ -7,8 +7,8 @@ use stream_reader::{ByteFrame, StreamReader, StreamReaderMode, StreamReaderResul
 /// `Stream<Bytes>` that buffers data until it reaches a desired block size,
 /// then emits a single `ByteFrame` (a vector of `Bytes`). If `exact` is set,
 /// each block will be `block_size` bytes at most, even if it has to split up
-/// a `Bytes`. If we hit the end of the stream, the final block may be
-/// smaller.
+/// a `Bytes`. (If we hit the end of the stream, the final block may be
+/// smaller.)
 #[must_use = "streams do nothing unless polled"]
 pub struct BufferedStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   stream: Option<StreamReader<S>>,
@@ -27,6 +27,10 @@ impl<S> BufferedStream<S>
       block_size: block_size,
       mode: mode
     }
+  }
+
+  pub fn pack(self) -> impl Stream<Item = Bytes, Error = io::Error> {
+    self.map(|b| b.pack())
   }
 }
 

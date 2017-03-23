@@ -6,13 +6,13 @@ extern crate lib4bottle;
 mod tests {
   use bytes::{Bytes};
   use futures::{Future, Stream};
-  use lib4bottle::{ToHex};
-  use lib4bottle::stream_helpers::{make_stream, make_stream_1};
+  use lib4bottle::hex::{ToHex};
+  use lib4bottle::stream_helpers::{stream_of, stream_of_vec};
   use lib4bottle::stream_reader::{StreamReader, StreamReaderMode};
 
   #[test]
   fn stream_read_exact_slices() {
-    let s = make_stream_1(Bytes::from_static(b"progressive"));
+    let s = stream_of(Bytes::from_static(b"progressive"));
     let (data1, s1) = StreamReader::read_exact(s, 3).wait().unwrap();
     assert_eq!(data1.vec.to_hex(), "70726f");
     let (data2, s2) = StreamReader::read_exact(s1, 2).wait().unwrap();
@@ -26,7 +26,7 @@ mod tests {
 
   #[test]
   fn stream_read_exact_slices_from_chunks() {
-    let s = make_stream(vec![
+    let s = stream_of_vec(vec![
       Bytes::from_static(b"pr"),
       Bytes::from_static(b"ogres"),
       Bytes::from_static(b"s"),
@@ -46,13 +46,13 @@ mod tests {
 
   #[test]
   fn stream_read_exact_refuses_to_truncate() {
-    let s = make_stream_1(Bytes::from_static(b"progressive"));
+    let s = stream_of(Bytes::from_static(b"progressive"));
     assert!(StreamReader::read_exact(s, 12).wait().is_err());
   }
 
   #[test]
   fn stream_read_exact_returns_valid_continuation_stream() {
-    let s = make_stream_1(Bytes::from_static(b"progressive"));
+    let s = stream_of(Bytes::from_static(b"progressive"));
     let (data1, s1) = StreamReader::read_exact(s, 3).wait().unwrap();
     assert_eq!(data1.vec.to_hex(), "70726f");
     assert_eq!(s1.collect().wait().unwrap().to_hex(), "6772657373697665");
@@ -60,7 +60,7 @@ mod tests {
 
   #[test]
   fn stream_read_at_most_works() {
-    let s = make_stream_1(Bytes::from_static(b"progressive"));
+    let s = stream_of(Bytes::from_static(b"progressive"));
     let (data1, s1) = StreamReader::read_at_most(s, 3).wait().unwrap();
     assert_eq!(data1.vec.to_hex(), "70726f");
     let (data2, s2) = StreamReader::read_at_most(s1, 2).wait().unwrap();
@@ -76,7 +76,7 @@ mod tests {
 
   #[test]
   fn stream_read_buffered_works() {
-    let s = make_stream(vec![
+    let s = stream_of_vec(vec![
       Bytes::from_static(b"pr"),
       Bytes::from_static(b"ogres"),
       Bytes::from_static(b"siv"),
