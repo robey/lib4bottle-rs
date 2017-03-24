@@ -1,16 +1,17 @@
-// extern crate bytes;
+extern crate bytes;
 extern crate futures;
 extern crate lib4bottle;
 
 #[cfg(test)]
 mod test_header {
   // use std::io;
-  // use bytes::{Bytes};
+  use bytes::{Bytes};
   use futures::{Future, Stream};
   use lib4bottle::header::{BottleType, Header};
   // use lib4bottle::buffered_stream::{buffer_stream};
   // use lib4bottle::stream_helpers::{drain_stream, make_stream_1, make_stream_4};
-  use lib4bottle::hex::{ToHex};
+  use lib4bottle::hex::{FromHex, ToHex};
+  use lib4bottle::stream_helpers::{stream_of};
   use lib4bottle::table::{Table};
   // use std::io;
   // use std::iter;
@@ -28,7 +29,68 @@ mod test_header {
     let b = Header::new(BottleType::Test, t);
     assert_eq!(b.encode().collect().wait().unwrap().to_hex(), format!("{}a003800196", MAGIC_HEX));
   }
+
+  #[test]
+  #[should_panic(expected = "UnexpectedEof")]
+  fn validate_header_length() {
+    Header::decode(stream_of(Bytes::from("00".from_hex()))).wait().unwrap();
+  }
+
+  #[test]
+  #[should_panic(expected = "Incorrect magic")]
+  fn validate_header_magic() {
+    Header::decode(stream_of(Bytes::from("00ff00ff00ff00ff".from_hex()))).wait().unwrap();
+  }
+
+  #[test]
+  #[should_panic(expected = "Incompatible version")]
+  fn validate_header_version() {
+    Header::decode(stream_of(Bytes::from("f09f8dbcff000000".from_hex()))).wait().unwrap();
+  }
+
+  #[test]
+  #[should_panic(expected = "Incompatible version")]
+  fn validate_header_flags() {
+    Header::decode(stream_of(Bytes::from("f09f8dbc00ff0000".from_hex()))).wait().unwrap();
+  }
+
+  #[test]
+  #[should_panic(expected = "Unknown bottle type")]
+  fn validate_header_bottle_type() {
+    Header::decode(stream_of(Bytes::from("f09f8dbc0000f000".from_hex()))).wait().unwrap();
+  }
+
+  #[test]
+  fn read_empty_header() {
+    let s = stream_of(Bytes::from("f09f8dbc0000a000".from_hex()));
+    let (h, s2) = Header::decode(s).wait().unwrap();
+    assert_eq!(format!("{:?}", h), "Header(Test, Table())");
+    // nothing left:
+    assert_eq!(s2.collect().wait().unwrap().to_hex(), "");
+  }
+
+  #[test]
+  fn read_simple_header() {
+    let s = stream_of(Bytes::from("f09f8dbc0000a003800196".from_hex()));
+    let (h, s2) = Header::decode(s).wait().unwrap();
+    assert_eq!(format!("{:?}", h), "Header(Test, Table(N0=150))");
+    // nothing left:
+    assert_eq!(s2.collect().wait().unwrap().to_hex(), "");
+  }
+
+  #[test]
+  fn read_sequentially() {
+    let s = stream_of(Bytes::from("f09f8dbc0000a003800196f09f8dbc0000a003800196".from_hex()));
+    let (h, s2) = Header::decode(s).wait().unwrap();
+    assert_eq!(format!("{:?}", h), "Header(Test, Table(N0=150))");
+    let (h2, s3) = Header::decode(s2).wait().unwrap();
+    assert_eq!(format!("{:?}", h2), "Header(Test, Table(N0=150))");
+    // nothing left:
+    assert_eq!(s3.collect().wait().unwrap().to_hex(), "");
+  }
 }
+
+
 
 
 
@@ -37,56 +99,6 @@ mod test_header {
 // const BASIC_MAGIC = MAGIC_STRING + "e000";
 //
 // describe("bottleReader", () => {
-//   it("validates the header", future(() => {
-//     const b = readBottle();
-//     return new Promise(resolve => {
-//       b.on("error", error => resolve(error));
-//       sourceStream(new Buffer("00", "hex")).pipe(b);
-//     }).then(error => {
-//       error.message.should.match(/End of stream/);
-//
-//       const b2 = readBottle();
-//       return new Promise(resolve => {
-//         b2.on("error", error => resolve(error));
-//         sourceStream(new Buffer("00ff00ff00ff00ff", "hex")).pipe(b2);
-//       });
-//     }).then(error => {
-//       error.message.should.match(/magic/);
-//
-//       const b3 = readBottle();
-//       return new Promise(resolve => {
-//         b3.on("error", error => resolve(error));
-//         sourceStream(new Buffer("f09f8dbcff000000", "hex")).pipe(b3);
-//       });
-//     }).then(error => {
-//       error.message.should.match(/version/);
-//
-//       const b4 = readBottle();
-//       return new Promise(resolve => {
-//         b4.on("error", error => resolve(error));
-//         sourceStream(new Buffer("f09f8dbc00ff0000", "hex")).pipe(b4);
-//       });
-//     }).then(error => {
-//       error.message.should.match(/flags/);
-//     });
-//   }));
-//
-//   it("reads the header", future(() => {
-//     const b = readBottle();
-//     sourceStream(new Buffer("f09f8dbc0000c000", "hex")).pipe(b);
-//     return b.readPromise().then(data => {
-//       data.header.fields.length.should.eql(0);
-//       data.type.should.eql(12);
-//
-//       const b2 = readBottle();
-//       sourceStream(new Buffer("f09f8dbc0000e003800196", "hex")).pipe(b2);
-//       return b2.readPromise();
-//     }).then(data => {
-//       data.header.fields.length.should.eql(1);
-//       data.header.fields[0].number.should.eql(150);
-//       data.type.should.eql(14);
-//     });
-//   }));
 //
 //   it("reads a data block", future(() => {
 //     const b = readBottle();

@@ -1,4 +1,5 @@
 use bytes::{Bytes};
+use std::fmt;
 use std::io;
 use futures::{Future, future, Stream};
 
@@ -12,7 +13,7 @@ const VERSION: u8 = 0;
 const MAX_TABLE_SIZE: usize = 4095;
 
 /// Bottle type (0 - 15) as defined in the spec.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum BottleType {
   File = 0,
   Hashed = 1,
@@ -68,6 +69,7 @@ impl Header {
   {
     StreamReader::read_exact(s, 8).and_then(|( frame, s )| {
       future::result(check_magic(frame.pack())).and_then(|( bottle_type, header_length )| {
+        println!("type {:?}, header len {}", bottle_type, header_length);
         StreamReader::read_exact(s, header_length).and_then(|( frame, s )| {
           future::result(Table::decode(frame.pack())).map(|header| {
             ( Header::new(bottle_type, header), s )
@@ -75,6 +77,12 @@ impl Header {
         })
       })
     })
+  }
+}
+
+impl fmt::Debug for Header {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "Header({:?}, {:?})", self.bottle_type, self.table)
   }
 }
 
@@ -86,7 +94,7 @@ fn check_magic(buffer: Bytes) -> Result<(BottleType, usize), io::Error> {
     return Err(bad_version_error(buffer[4], buffer[5]));
   }
   let btype = decode_bottle_type((buffer[6] >> 4) & 0xf)?;
-  let header_length = ((buffer[6] & 0xf) as usize) << 8 + (buffer[7] as usize);
+  let header_length = (((buffer[6] & 0xf) as usize) << 8) + (buffer[7] as usize);
   Ok((btype, header_length))
 }
 
