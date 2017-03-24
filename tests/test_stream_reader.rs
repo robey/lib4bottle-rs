@@ -3,7 +3,7 @@ extern crate futures;
 extern crate lib4bottle;
 
 #[cfg(test)]
-mod tests {
+mod test_stream_reader {
   use bytes::{Bytes};
   use futures::{Future, Stream};
   use lib4bottle::hex::{ToHex};

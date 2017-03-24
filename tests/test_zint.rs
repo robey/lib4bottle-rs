@@ -1,7 +1,7 @@
 extern crate lib4bottle;
 
 #[cfg(test)]
-mod tests {
+mod test_zint {
   use std::io;
   use lib4bottle::hex::{FromHex, ToHex};
   use lib4bottle::zint;

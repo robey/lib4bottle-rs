@@ -3,7 +3,7 @@ extern crate futures;
 extern crate lib4bottle;
 
 #[cfg(test)]
-mod tests {
+mod test_buffered_stream {
   use bytes::Bytes;
   use lib4bottle::buffered_stream::BufferedStream;
   use lib4bottle::stream_helpers::{stream_of_vec, stream_to_string_vec};

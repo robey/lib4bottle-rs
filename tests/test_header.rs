@@ -3,7 +3,7 @@ extern crate futures;
 extern crate lib4bottle;
 
 #[cfg(test)]
-mod tests {
+mod test_header {
   // use std::io;
   // use bytes::{Bytes};
   use futures::{Future, Stream};
