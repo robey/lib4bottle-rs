@@ -47,18 +47,7 @@ impl<S, SS> Bottle<S, SS>
   }
 }
 
-// /// Generate a bottle from a type, header, and a list of streams.
-// pub fn make_bottle<I, A>(btype: BottleType, header: &Header, streams: I)
-//   -> impl Stream<Item = ByteFrame, Error = io::Error>
-//   where
-//     I: IntoIterator<Item = A>,
-//     A: Stream<Item = Vec<Bytes>, Error = io::Error>
-// {
-//   let combined = stream::iter(streams.into_iter().map(|s| {
-//     Ok::<_, io::Error>(framed_vec_stream(s))
-//   })).flatten();
-//   make_header_stream(btype, header).chain(combined).chain(make_stream_1(END_OF_ALL_STREAMS_BYTES.clone()))
-// }
+
 
 // // convert a byte stream into a stream with each chunk prefixed by a length
 // // marker, suitable for embedding in a bottle.

@@ -138,57 +138,7 @@ mod test_bottle {
 // // const BASIC_MAGIC = MAGIC_STRING + "e000";
 // //
 // // describe("bottleReader", () => {
-// //   it("validates the header", future(() => {
-// //     const b = readBottle();
-// //     return new Promise(resolve => {
-// //       b.on("error", error => resolve(error));
-// //       sourceStream(new Buffer("00", "hex")).pipe(b);
-// //     }).then(error => {
-// //       error.message.should.match(/End of stream/);
-// //
-// //       const b2 = readBottle();
-// //       return new Promise(resolve => {
-// //         b2.on("error", error => resolve(error));
-// //         sourceStream(new Buffer("00ff00ff00ff00ff", "hex")).pipe(b2);
-// //       });
-// //     }).then(error => {
-// //       error.message.should.match(/magic/);
-// //
-// //       const b3 = readBottle();
-// //       return new Promise(resolve => {
-// //         b3.on("error", error => resolve(error));
-// //         sourceStream(new Buffer("f09f8dbcff000000", "hex")).pipe(b3);
-// //       });
-// //     }).then(error => {
-// //       error.message.should.match(/version/);
-// //
-// //       const b4 = readBottle();
-// //       return new Promise(resolve => {
-// //         b4.on("error", error => resolve(error));
-// //         sourceStream(new Buffer("f09f8dbc00ff0000", "hex")).pipe(b4);
-// //       });
-// //     }).then(error => {
-// //       error.message.should.match(/flags/);
-// //     });
-// //   }));
-// //
-// //   it("reads the header", future(() => {
-// //     const b = readBottle();
-// //     sourceStream(new Buffer("f09f8dbc0000c000", "hex")).pipe(b);
-// //     return b.readPromise().then(data => {
-// //       data.header.fields.length.should.eql(0);
-// //       data.type.should.eql(12);
-// //
-// //       const b2 = readBottle();
-// //       sourceStream(new Buffer("f09f8dbc0000e003800196", "hex")).pipe(b2);
-// //       return b2.readPromise();
-// //     }).then(data => {
-// //       data.header.fields.length.should.eql(1);
-// //       data.header.fields[0].number.should.eql(150);
-// //       data.type.should.eql(14);
-// //     });
-// //   }));
-// //
+
 // //   it("reads a data block", future(() => {
 // //     const b = readBottle();
 // //     sourceStream(new Buffer(`${BASIC_MAGIC}0568656c6c6f00ff`, "hex")).pipe(b);
