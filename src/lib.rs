@@ -13,10 +13,10 @@ pub mod stream_helpers;
 pub mod stream_reader;
 
 // intrinsic to 4bottle format:
+pub mod bottle;
 pub mod header;
 pub mod table;
 pub mod zint;
-// pub mod bottle;
 // pub mod compound_stream;
 // pub mod bytes_stream;
 // pub mod byte_stream;

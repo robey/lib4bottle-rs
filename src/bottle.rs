@@ -3,16 +3,15 @@ use std::io;
 use std::iter::Iterator;
 use bytes::Bytes;
 
-use bottle_header::{Header};
-use buffered_stream::{buffer_stream};
-use stream_helpers::{flatten_bytes, make_stream, make_stream_1};
-use stream_reader::{stream_read_exact};
+use buffered_stream::{BufferedStream};
+use header::{BottleType, Header};
+use stream_helpers::{stream_of, stream_of_vec};
+// use stream_helpers::{flatten_bytes, make_framed_stream_1, make_framed_stream_3, make_stream_1};
+use stream_reader::{ByteFrame, StreamReader};
+use table::{Table};
 use zint;
 
-static MAGIC: [u8; 4] = [ 0xf0, 0x9f, 0x8d, 0xbc ];
-const VERSION: u8 = 0;
 
-const MAX_HEADER_SIZE: usize = 4095;
 const MIN_BUFFER: usize = 1024;
 
 lazy_static! {
@@ -20,42 +19,46 @@ lazy_static! {
   static ref END_OF_ALL_STREAMS_BYTES: Bytes = Bytes::from(zint::encode_length(zint::END_OF_ALL_STREAMS));
 }
 
-// 0 - 15, defined in the spec
-pub enum BottleType {
-  File = 0,
-  Hashed = 1,
-  Encrypted = 3,
-  Compressed = 4,
-  // for tests:
-  Test = 10,
-  Test2 = 11
+/// Bottle of some known type, metadata table, and a "stream of streams".
+pub struct Bottle<S, SS>
+  where
+    S: Stream<Item = Bytes, Error = io::Error>,
+    SS: Stream<Item = S, Error = io::Error>
+{
+  header: Header,
+  streams: SS
 }
 
-pub fn decode_bottle_type(btype: u8) -> Result<BottleType, io::Error> {
-  match btype {
-    0 => Ok(BottleType::File),
-    1 => Ok(BottleType::Hashed),
-    3 => Ok(BottleType::Encrypted),
-    4 => Ok(BottleType::Compressed),
-    10 => Ok(BottleType::Test),
-    11 => Ok(BottleType::Test2),
-    _ => Err(unknown_bottle_type_error(btype))
+impl<S, SS> Bottle<S, SS>
+  where
+    S: Stream<Item = Bytes, Error = io::Error>,
+    SS: Stream<Item = S, Error = io::Error>
+{
+  pub fn new(bottle_type: BottleType, table: Table, streams: SS) -> Bottle<S, SS> {
+    Bottle { header: Header::new(bottle_type, table), streams }
+  }
+
+  /// Consume the streams by encoding everything into one big happy byte
+  /// stream.
+  pub fn encode(self) -> impl Stream<Item = Bytes, Error = io::Error> {
+    self.header.encode().chain(self.streams.map(|s| {
+      frame_stream(s)
+    }).flatten()).chain(stream_of(END_OF_ALL_STREAMS_BYTES.clone()))
   }
 }
 
-/// Generate a bottle from a type, header, and a list of streams.
-pub fn make_bottle<I, A>(btype: BottleType, header: &Header, streams: I)
-  -> impl Stream<Item = Vec<Bytes>, Error = io::Error>
-  where
-    I: IntoIterator<Item = A>,
-    A: Stream<Item = Vec<Bytes>, Error = io::Error>
-{
-  let combined = stream::iter(streams.into_iter().map(|s| {
-    // prevent tiny packets by requiring it to buffer at least 1KB
-    Ok::<_, io::Error>(framed_vec_stream(buffer_stream(s, MIN_BUFFER, false)))
-  })).flatten();
-  make_header_stream(btype, header).chain(combined).chain(make_stream_1(END_OF_ALL_STREAMS_BYTES.clone()))
-}
+// /// Generate a bottle from a type, header, and a list of streams.
+// pub fn make_bottle<I, A>(btype: BottleType, header: &Header, streams: I)
+//   -> impl Stream<Item = ByteFrame, Error = io::Error>
+//   where
+//     I: IntoIterator<Item = A>,
+//     A: Stream<Item = Vec<Bytes>, Error = io::Error>
+// {
+//   let combined = stream::iter(streams.into_iter().map(|s| {
+//     Ok::<_, io::Error>(framed_vec_stream(s))
+//   })).flatten();
+//   make_header_stream(btype, header).chain(combined).chain(make_stream_1(END_OF_ALL_STREAMS_BYTES.clone()))
+// }
 
 // // convert a byte stream into a stream with each chunk prefixed by a length
 // // marker, suitable for embedding in a bottle.
@@ -69,78 +72,59 @@ pub fn make_bottle<I, A>(btype: BottleType, header: &Header, streams: I)
 // }
 
 
-// convert a byte stream into a stream with each chunk prefixed by a length
-// marker, suitable for embedding in a bottle. (each `Vec<Bytes>` gets a new
-// initial `Bytes`.)
-pub fn framed_vec_stream<S>(s: S) -> impl Stream<Item = Vec<Bytes>, Error = io::Error>
-  where S: Stream<Item = Vec<Bytes>, Error = io::Error>
-{
-  s.map(|buffers| {
-    let mut new_buffers = Vec::with_capacity(buffers.len() + 1);
-    let total_length: usize = buffers.iter().fold(0, |sum, buf| sum + buf.len());
-    new_buffers.push(Bytes::from(zint::encode_length(total_length as u32)));
-    new_buffers.extend(buffers);
-    new_buffers
-  }).chain(make_stream_1(END_OF_STREAM_BYTES.clone()))
-}
 
-
-// ----- header
-
-// generate a stream that's just a bottle header (magic + header data).
-pub fn make_header_stream(btype: BottleType, header: &Header) -> impl Stream<Item = Vec<Bytes>, Error = io::Error> {
-  let header_bytes = header.encode();
-  assert!(header_bytes.len() <= MAX_HEADER_SIZE);
-  let version: [u8; 4] = [
-    VERSION,
-    0,
-    ((btype as u8) << 4) | ((header_bytes.len() >> 8) & 0xf) as u8,
-    (header_bytes.len() & 0xff) as u8
-  ];
-  make_stream(vec![ Bytes::from_static(&MAGIC), Bytes::from(&version[..]), Bytes::from(header_bytes) ])
-}
-
-pub fn read_header<S>(s: S)
-  -> impl Future<Item = (BottleType, Header, impl Stream<Item = Bytes, Error = io::Error>), Error = io::Error>
+/// Convert a byte stream into a stream with each chunk prefixed by a length
+/// marker, suitable for embedding in a bottle. Buffering converts clusters
+/// of small blocks into a single "frame" that we can serialize, without
+/// copying the buffers around.
+pub fn frame_stream<S>(s: S) -> impl Stream<Item = Bytes, Error = io::Error>
   where S: Stream<Item = Bytes, Error = io::Error>
 {
-  stream_read_exact(s, 8).and_then(|( buffers, s )| {
-    future::result(check_magic(flatten_bytes(buffers))).and_then(|( btype, header_length )| {
-      stream_read_exact(s, header_length).and_then(|( buffers, s )| {
-        future::result(Header::decode(flatten_bytes(buffers).as_ref())).map(|header| {
-          ( btype, header, s )
-        })
-      })
-    })
-  })
+  // prevent tiny packets by requiring it to buffer at least 1KB
+  BufferedStream::new(s, MIN_BUFFER, false).map(|frame| {
+    let prefix: Bytes = Bytes::from(zint::encode_length(frame.length as u32));
+    // transform frame into Stream<Bytes>:
+    stream_of(prefix).chain(stream_of_vec(frame.vec))
+  }).flatten().chain(stream_of(END_OF_STREAM_BYTES.clone()))
 }
 
-fn check_magic(buffer: Bytes) -> Result<(BottleType, usize), io::Error> {
-  if buffer.slice(0, 4) != &MAGIC[..] {
-    return Err(bad_magic_error());
-  }
-  if buffer[4] != VERSION || buffer[5] != 0 {
-    return Err(bad_version_error(buffer[4], buffer[5]));
-  }
-  let btype = decode_bottle_type((buffer[6] >> 4) & 0xf)?;
-  let header_length = ((buffer[6] & 0xf) as usize) << 8 + (buffer[7] as usize);
-  Ok((btype, header_length))
-}
+// export function unframingStream() {
+//   const readLength = t => {
+//     return t.get(1).then(byte => {
+//       if (byte == null || byte.length < 1) return null;
+//       const needed = lengthLength(byte[0]) - 1;
+//       if (needed == 0) return decodeLength(byte);
+//
+//       return t.get(needed).then(rest => {
+//         if (rest == null || rest.length < needed) return null;
+//         return decodeLength(Buffer.concat([ byte, rest ]));
+//       });
+//     });
+//   };
+//
+//   const transform = new PullTransform({
+//     name: "unframingStream",
+//     transform: t => {
+//       return readLength(t).then(length => {
+//         if (length == null || length <= 0) {
+//           t.push(null);
+//           return;
+//         }
+//         return t.get(length);
+//       });
+//     }
+//   });
+//
+//   return promisify(transform, { name: "unframingStream" });
+// }
+//
+
 
 
 // ----- errors
 
-fn bad_magic_error() -> io::Error {
-  io::Error::new(io::ErrorKind::InvalidInput, "Incorrect magic (not a 4bottle archive)")
-}
 
-fn bad_version_error(version: u8, extra: u8) -> io::Error {
-  io::Error::new(io::ErrorKind::InvalidInput, format!("Incompatible version: {}, {}", version, extra))
-}
 
-fn unknown_bottle_type_error(btype: u8) -> io::Error {
-  io::Error::new(io::ErrorKind::InvalidInput, format!("Unknown bottle type: {}", btype))
-}
 
 
 

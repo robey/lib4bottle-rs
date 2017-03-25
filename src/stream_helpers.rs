@@ -22,6 +22,12 @@ pub fn stream_of_vec(v: Vec<Bytes>) -> impl Stream<Item = Bytes, Error = io::Err
   stream::iter(v.into_iter().map(|b| Ok(b)))
 }
 
+pub fn stream_of_streams<S>(v: Vec<S>) -> impl Stream<Item = S, Error = io::Error>
+  where S: Stream<Item = Bytes, Error = io::Error>
+{
+  stream::iter(v.into_iter().map(|b| Ok(b)))
+}
+
 
 // pub fn make_framed_stream_1(b1: Bytes) -> impl Stream<Item = ByteFrame, Error = io::Error> {
 //   let length = b1.len();
