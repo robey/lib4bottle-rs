@@ -73,7 +73,7 @@ impl Table {
       // write content:
       match f.value {
         FieldValue::Boolean => (),
-        FieldValue::Number(value) => zint::write_packed_int(writer, value)?,
+        FieldValue::Number(value) => writer.write_all(zint::encode_packed_u64(value).as_ref())?,
         FieldValue::String(ref value) => writer.write_all(value.as_ref())?
       };
     }
@@ -98,11 +98,11 @@ impl Table {
       i += 2;
       if i + length > buffer.len() { return Err(truncated_error()) }
 
-      let content = &buffer[i .. i + length];
+      let content = buffer.slice(i, i + length); //&buffer[i .. i + length];
       let value = match kind {
         KIND_BOOLEAN => FieldValue::Boolean,
-        KIND_NUMBER => FieldValue::Number(zint::decode_packed_int(content.as_ref())?),
-        KIND_STRING => FieldValue::String(str::from_utf8(content).map_err(convert_error)?.to_string()),
+        KIND_NUMBER => FieldValue::Number(zint::decode_packed_u64(content)),
+        KIND_STRING => FieldValue::String(str::from_utf8(content.as_ref()).map_err(convert_error)?.to_string()),
         _ => return Err(unknown_kind_error())
       };
       table.fields.push(Field { id: id, value: value });
