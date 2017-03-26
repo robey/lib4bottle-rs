@@ -38,67 +38,6 @@ mod test_bottle {
   }
 
   #[test]
-  fn write_power_of_2_frame() {
-    for block_size in vec![ 128, 1024, 1 << 18, 1 << 21 ] {
-      let mut buffer: Vec<u8> = Vec::with_capacity(block_size);
-      buffer.resize(block_size, 0);
-      let b = frame_stream(stream_of(Bytes::from(buffer)));
-      let out = ByteFrame::from(b.collect().wait().unwrap()).pack();
-      assert_eq!(out.len(), block_size + 2);
-      assert_eq!(out[0], (((block_size as f32).log(2.0) as u8) & 0x1f) + (0xf0 - 7));
-      assert_eq!(out[out.len() - 1], 0);
-    }
-  }
-
-  #[test]
-  fn write_medium_frame() {
-    // < 8K
-    for block_size in vec![ 129, 1234, 8191 ] {
-      let mut buffer: Vec<u8> = Vec::with_capacity(block_size);
-      buffer.resize(block_size, 0);
-      let b = frame_stream(stream_of(Bytes::from(buffer)));
-      let out = ByteFrame::from(b.collect().wait().unwrap()).pack();
-      assert_eq!(out.len(), block_size + 3);
-      assert_eq!(out[0], (block_size & 0x3f) as u8 + 0x80);
-      assert_eq!(out[1], (block_size >> 6) as u8);
-      assert_eq!(out[out.len() - 1], 0);
-    }
-  }
-
-  #[test]
-  fn write_large_frame() {
-    // < 2M
-    for block_size in vec![ 8193, 12345, 456123 ] {
-      let mut buffer: Vec<u8> = Vec::with_capacity(block_size);
-      buffer.resize(block_size, 0);
-      let b = frame_stream(stream_of(Bytes::from(buffer)));
-      let out = ByteFrame::from(b.collect().wait().unwrap()).pack();
-      assert_eq!(out.len(), block_size + 4);
-      assert_eq!(out[0], (block_size & 0x1f) as u8 + 0xc0);
-      assert_eq!(out[1], ((block_size >> 5) & 0xff) as u8);
-      assert_eq!(out[2], (block_size >> 13) as u8);
-      assert_eq!(out[out.len() - 1], 0);
-    }
-  }
-
-  #[test]
-  fn write_huge_frame() {
-    // >= 2M
-    for block_size in vec![ (1 << 21) + 1, 3998778 ] {
-      let mut buffer: Vec<u8> = Vec::with_capacity(block_size);
-      buffer.resize(block_size, 0);
-      let b = frame_stream(stream_of(Bytes::from(buffer)));
-      let out = ByteFrame::from(b.collect().wait().unwrap()).pack();
-      assert_eq!(out.len(), block_size + 5);
-      assert_eq!(out[0], (block_size & 0xf) as u8 + 0xe0);
-      assert_eq!(out[1], ((block_size >> 4) & 0xff) as u8);
-      assert_eq!(out[2], ((block_size >> 12) & 0xff) as u8);
-      assert_eq!(out[3], (block_size >> 20) as u8);
-      assert_eq!(out[out.len() - 1], 0);
-    }
-  }
-
-  #[test]
   fn write_a_small_bottle() {
     let mut t = Table::new();
     t.add_number(0, 150);
@@ -118,7 +57,10 @@ mod test_bottle {
     let empty_stream = stream::empty::<stream::Empty<Bytes, io::Error>, io::Error>();
     let b1 = Bottle::new(BottleType::Test, Table::new(), empty_stream);
     let b2 = Bottle::new(BottleType::Test2, Table::new(), stream_of_streams(vec![ b1.encode() ]));
-    assert_eq!(b2.encode().collect().wait().unwrap().to_hex(), format!("{}b00009{}a000ff00ff", MAGIC_HEX, MAGIC_HEX));
+    assert_eq!(
+      b2.encode().collect().wait().unwrap().to_hex(),
+      format!("{}b00009{}a000ff00ff", MAGIC_HEX, MAGIC_HEX)
+    );
   }
 
   #[test]
