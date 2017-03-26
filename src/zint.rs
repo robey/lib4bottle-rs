@@ -1,24 +1,30 @@
-use bytes::{Buf, BufMut, Bytes, LittleEndian};
-use std::io;
+use bytes::{Bytes};
 
-pub const END_OF_STREAM: u32 = 0;
-pub const END_OF_ALL_STREAMS: u32 = 0xffffffff;
+pub const END_OF_STREAM: u8 = 0;
+pub const END_OF_BOTTLE: u8 = 0xff;
+pub const END_OF_STREAM_ARRAY: [u8; 1] = [ END_OF_STREAM ];
+pub const END_OF_BOTTLE_ARRAY: [u8; 1] = [ END_OF_BOTTLE ];
+
+lazy_static! {
+  pub static ref END_OF_STREAM_BYTES: Bytes = Bytes::from(&END_OF_STREAM_ARRAY[..]);
+  pub static ref END_OF_BOTTLE_BYTES: Bytes = Bytes::from(&END_OF_BOTTLE_ARRAY[..]);
+}
 
 /// Encode a u64 as 1 - 8 bytes packed, LSB, with buffer length passed
 /// out-of-band.
 pub fn encode_packed_u64(number: u64) -> Bytes {
-  let mut count = 0;
+  let mut index = 0;
   let mut buffer: [u8; 8] = [ 0; 8 ];
   let mut n = number;
 
   while n > 255 {
-    buffer[count] = (n & 0xff) as u8;
+    buffer[index] = (n & 0xff) as u8;
     n >>= 8;
-    count += 1;
+    index += 1;
   }
-  buffer[count] = (n & 0xff) as u8;
-  count += 1;
-  Bytes::from(&buffer[0..count])
+  buffer[index] = (n & 0xff) as u8;
+  index += 1;
+  Bytes::from(&buffer[0 .. index])
 }
 
 /// Decode a packed u64 back into a u64.
@@ -32,17 +38,36 @@ pub fn decode_packed_u64(buffer: Bytes) -> u64 {
   rv
 }
 
-/// Encode a u32 as 4 bytes, LSB.
-pub fn encode_u32(number: u32) -> Bytes {
-  let mut vec: Vec<u8> = Vec::with_capacity(4);
-  vec.put_u32::<LittleEndian>(number);
-  Bytes::from(vec)
+/// Encode a u32 length as 1 to 3 bytes, using the top 2 bits to track how
+/// many additional bytes were needed.
+pub fn encode_length(number: u32) -> Bytes {
+  assert!(number > 0);
+  assert!(number < (1 << 22));
+  let mut index = 3;
+  let mut buffer: [u8; 3] = [ 0; 3 ];
+  let mut n = number;
+
+  while n > 0 || (buffer[index] & 0xc0) != 0 {
+    index -= 1;
+    buffer[index] = (n & 0xff) as u8;
+    n >>= 8;
+  }
+  buffer[index] = buffer[index] | ((2 - index) << 6) as u8;
+  Bytes::from(&buffer[index ..])
 }
 
-/// Decode a 4-byte `Bytes` back into a u32.
-pub fn decode_u32(buffer: Bytes) -> u32 {
-  let mut buf = io::Cursor::new(buffer);
-  buf.get_u32::<LittleEndian>()
+/// Decode the first byte of a u32 length into a count of additional bytes,
+/// and an accumulator so far.
+pub fn decode_first_length_byte(byte: u8) -> (u8, u8) {
+  ( (byte & 0xc0) >> 6, byte & 0x3f )
+}
+
+pub fn decode_length(accumulator: u8, bytes: &[u8]) -> u32 {
+  let mut n: u32 = accumulator as u32;
+  for b in bytes.iter() {
+    n = (n << 8) | (*b as u32);
+  }
+  n
 }
 
 pub fn bytes_needed(mut number: u64) -> usize {

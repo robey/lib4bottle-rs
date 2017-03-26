@@ -47,40 +47,42 @@ mod test_zint {
   }
 
   #[test]
-  fn encode_u32() {
-    assert_eq!(zint::encode_u32(1).to_hex(), "01000000");
-    assert_eq!(zint::encode_u32(100).to_hex(), "64000000");
-    assert_eq!(zint::encode_u32(129).to_hex(), "81000000");
-    assert_eq!(zint::encode_u32(127).to_hex(), "7f000000");
-    assert_eq!(zint::encode_u32(256).to_hex(), "00010000");
-    assert_eq!(zint::encode_u32(1024).to_hex(), "00040000");
-    assert_eq!(zint::encode_u32(12345).to_hex(), "39300000");
-    assert_eq!(zint::encode_u32(3998778).to_hex(), "3a043d00");
-    assert_eq!(zint::encode_u32(87654321).to_hex(), "b17f3905");
-    assert_eq!(zint::encode_u32(1 << 21).to_hex(), "00002000");
+  fn encode_length() {
+    assert_eq!(zint::encode_length(1).to_hex(), "01");
+    assert_eq!(zint::encode_length(100).to_hex(), "4064");
+    assert_eq!(zint::encode_length(129).to_hex(), "4081");
+    assert_eq!(zint::encode_length(127).to_hex(), "407f");
+    assert_eq!(zint::encode_length(256).to_hex(), "4100");
+    assert_eq!(zint::encode_length(1024).to_hex(), "4400");
+    assert_eq!(zint::encode_length(12345).to_hex(), "7039");
+    assert_eq!(zint::encode_length(3998778).to_hex(), "bd043a");
+    assert_eq!(zint::encode_length(1 << 21).to_hex(), "a00000");
   }
 
   #[test]
-  fn encode_u32_special() {
-    assert_eq!(zint::encode_u32(zint::END_OF_STREAM).to_hex(), "00000000");
-    assert_eq!(zint::encode_u32(zint::END_OF_ALL_STREAMS).to_hex(), "ffffffff");
+  fn decode_first_length_byte() {
+    assert_eq!(zint::decode_first_length_byte(0x01), ( 0, 1 ));
+    assert_eq!(zint::decode_first_length_byte(0x0f), ( 0, 15 ));
+    assert_eq!(zint::decode_first_length_byte(0x3f), ( 0, 63 ));
+    assert_eq!(zint::decode_first_length_byte(0x40), ( 1, 0 ));
+    assert_eq!(zint::decode_first_length_byte(0x4f), ( 1, 15 ));
+    assert_eq!(zint::decode_first_length_byte(0x5f), ( 1, 31 ));
+    assert_eq!(zint::decode_first_length_byte(0x80), ( 2, 0 ));
+    assert_eq!(zint::decode_first_length_byte(0xbf), ( 2, 63 ));
   }
 
   #[test]
-  fn decode_u32() {
-    assert_eq!(zint::decode_u32(Bytes::from("00000000".from_hex())), 0);
-    assert_eq!(zint::decode_u32(Bytes::from("01000000".from_hex())), 1);
-    assert_eq!(zint::decode_u32(Bytes::from("64000000".from_hex())), 100);
-    assert_eq!(zint::decode_u32(Bytes::from("81000000".from_hex())), 129);
-    assert_eq!(zint::decode_u32(Bytes::from("7f000000".from_hex())), 127);
-    assert_eq!(zint::decode_u32(Bytes::from("00010000".from_hex())), 256);
-    assert_eq!(zint::decode_u32(Bytes::from("00040000".from_hex())), 1024);
-    assert_eq!(zint::decode_u32(Bytes::from("39300000".from_hex())), 12345);
-    assert_eq!(zint::decode_u32(Bytes::from("3a043d00".from_hex())), 3998778);
-    assert_eq!(zint::decode_u32(Bytes::from("00002000".from_hex())), 1 << 21);
-    assert_eq!(
-      zint::decode_u32(Bytes::from("ffffffff".from_hex())),
-      zint::END_OF_ALL_STREAMS
-    );
+  fn decode_length() {
+    assert_eq!(zint::decode_length(0, Bytes::from("01".from_hex()).as_ref()), 1);
+    assert_eq!(zint::decode_length(1, Bytes::from("".from_hex()).as_ref()), 1);
+    assert_eq!(zint::decode_length(15, Bytes::from("".from_hex()).as_ref()), 15);
+    assert_eq!(zint::decode_length(0, Bytes::from("64".from_hex()).as_ref()), 100);
+    assert_eq!(zint::decode_length(0, Bytes::from("81".from_hex()).as_ref()), 129);
+    assert_eq!(zint::decode_length(0, Bytes::from("7f".from_hex()).as_ref()), 127);
+    assert_eq!(zint::decode_length(1, Bytes::from("00".from_hex()).as_ref()), 256);
+    assert_eq!(zint::decode_length(4, Bytes::from("00".from_hex()).as_ref()), 1024);
+    assert_eq!(zint::decode_length(0x30, Bytes::from("39".from_hex()).as_ref()), 12345);
+    assert_eq!(zint::decode_length(0x3d, Bytes::from("043a".from_hex()).as_ref()), 3998778);
+    assert_eq!(zint::decode_length(0x20, Bytes::from("0000".from_hex()).as_ref()), 1 << 21);
   }
 }

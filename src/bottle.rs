@@ -11,13 +11,7 @@ use stream_reader::{ByteFrame, StreamReader};
 use table::{Table};
 use zint;
 
-
 const MIN_BUFFER: usize = 1024;
-
-lazy_static! {
-  static ref END_OF_STREAM_BYTES: Bytes = Bytes::from(zint::encode_length(zint::END_OF_STREAM));
-  static ref END_OF_ALL_STREAMS_BYTES: Bytes = Bytes::from(zint::encode_length(zint::END_OF_ALL_STREAMS));
-}
 
 /// Bottle of some known type, metadata table, and a "stream of streams".
 pub struct Bottle<S, SS>
@@ -43,7 +37,7 @@ impl<S, SS> Bottle<S, SS>
   pub fn encode(self) -> impl Stream<Item = Bytes, Error = io::Error> {
     self.header.encode().chain(self.streams.map(|s| {
       frame_stream(s)
-    }).flatten()).chain(stream_of(END_OF_ALL_STREAMS_BYTES.clone()))
+    }).flatten()).chain(stream_of(zint::END_OF_BOTTLE_BYTES.clone()))
   }
 }
 
@@ -74,7 +68,7 @@ pub fn frame_stream<S>(s: S) -> impl Stream<Item = Bytes, Error = io::Error>
     let prefix: Bytes = Bytes::from(zint::encode_length(frame.length as u32));
     // transform frame into Stream<Bytes>:
     stream_of(prefix).chain(stream_of_vec(frame.vec))
-  }).flatten().chain(stream_of(END_OF_STREAM_BYTES.clone()))
+  }).flatten().chain(stream_of(zint::END_OF_STREAM_BYTES.clone()))
 }
 
 // export function unframingStream() {
