@@ -5,7 +5,7 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod test_buffered_stream {
   use bytes::Bytes;
-  use lib4bottle::buffered_stream::BufferedStream;
+  use lib4bottle::buffered_stream::BufferedByteStream;
   use lib4bottle::stream_helpers::{stream_of_vec, stream_to_string_vec};
 
   #[test]
@@ -16,7 +16,7 @@ mod test_buffered_stream {
       Bytes::from_static(b"it"),
       Bytes::from_static(b"ty!")
     ]);
-    let b = BufferedStream::new(s, 1024, false);
+    let b = BufferedByteStream::new(s, 1024, false);
     assert_eq!(stream_to_string_vec(b.pack()), vec![ "hellokitty!" ]);
   }
 
@@ -28,7 +28,7 @@ mod test_buffered_stream {
       Bytes::from_static(b"it"),
       Bytes::from_static(b"ty!")
     ]);
-    let b = BufferedStream::new(s, 5, false);
+    let b = BufferedByteStream::new(s, 5, false);
     assert_eq!(stream_to_string_vec(b.pack()), vec![ "hellok", "itty!" ]);
   }
 
@@ -38,7 +38,7 @@ mod test_buffered_stream {
       Bytes::from_static(b"hell"),
       Bytes::from_static(b"okittyhowareyou!")
     ]);
-    let b = BufferedStream::new(s, 5, true);
+    let b = BufferedByteStream::new(s, 5, true);
     assert_eq!(stream_to_string_vec(b.pack()), vec![ "hello", "kitty", "howar", "eyou!" ]);
   }
 }

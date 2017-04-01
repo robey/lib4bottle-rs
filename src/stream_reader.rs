@@ -25,36 +25,33 @@ pub enum ReadMode {
 /// each returning a future.
 ///
 /// The stream is "consumed" while an outstanding future is executing, so
-/// only one read may happen at once. When you're done, the original stream
-/// can be extracted, along with any remaining unused buffer.
+/// only one read may happen at once. Each future returns the frame that was
+/// read, and a new `ReadableByteStream` representing the rest of the stream.
+/// When you're done reading in this manner, the original stream can be
+/// extracted, along with any remaining unused buffer.
 ///
 /// Because `Bytes` objects may be split in the process of chopping them up
-/// into perfectly-sized chunks, the object keeps a prefix around to use for
-/// subsequent requests. You may use `into_stream()` to create a `Stream`
-/// object that combines the leftover prefix with the remaining stream.
+/// into perfectly-sized chunks, the object keeps pre-read data around to use
+/// for subsequent requests. You may use `into_stream()` to create a `Stream`
+/// object that combines the leftover buffers with the remaining stream.
 pub struct ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   stream: Fuse<S>,
-  prefix: Option<Bytes>
+  saved: VecDeque<Bytes>,
+  saved_count: usize
 }
 
 impl<S> ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   /// Read `count` bytes from a stream, returning a `Future<ByteFrame>` with
   /// a `Vec<Bytes>` of the cumulative buffers.
-  pub fn read<'a>(&'a mut self, count: usize, mode: ReadMode)
-    -> StreamReadFuture<'a, S>
+  pub fn read(self, count: usize, mode: ReadMode)
+    -> ReadableByteStreamFuture<S>
   {
-    let mut saved = VecDeque::new();
-    let total_saved = match self.prefix {
-      None => 0,
-      Some(ref b) => b.len()
-    };
-    saved.extend(self.prefix.take().into_iter());
-    StreamReadFuture {
-      stream: self,
-      count: count,
-      mode: mode,
-      saved: saved,
-      total_saved: total_saved
+    ReadableByteStreamFuture {
+      stream: Some(self.stream),
+      count,
+      mode,
+      saved: self.saved,
+      saved_count: self.saved_count
     }
   }
 
@@ -62,8 +59,8 @@ impl<S> ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   /// containing the cumulative buffers totalling exactly the desired bytes.
   /// If not enough bytes are available on the stream before EOF, an EOF error
   /// is returned.
-  pub fn read_exact<'a>(&'a mut self, count: usize)
-    -> StreamReadFuture<'a, S>
+  pub fn read_exact(self, count: usize)
+    -> ReadableByteStreamFuture<S>
   {
     self.read(count, ReadMode::Exact)
   }
@@ -72,23 +69,31 @@ impl<S> ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   /// containing the cumulative buffers.
   /// If not enough bytes are available on the stream before EOF, the frame
   /// may contain fewer bytes than requested.
-  pub fn read_at_most<'a>(&'a mut self, count: usize)
-    -> StreamReadFuture<'a, S>
+  pub fn read_at_most(self, count: usize)
+    -> ReadableByteStreamFuture<S>
   {
     self.read(count, ReadMode::AtMost)
+  }
+
+  /// Decompose back into an optional buffer (anything that has been pre-read)
+  /// and the original stream.
+  pub fn into_inner(self) -> (Option<Bytes>, S) {
+    assert!(self.saved.len() <= 1);
+    let mut saved = self.saved;
+    ( saved.pop_front(), self.stream.into_inner() )
   }
 
   /// Merge any remainder buffer back into the stream as if it had been
   /// "un-read". This consumes `self`, returning the new combined stream.
   pub fn into_stream(self) -> impl Stream<Item = Bytes, Error = io::Error> {
     let stream = self.stream;
-    stream::iter(self.prefix.into_iter().map(|b| Ok(b))).chain(stream)
+    stream::iter(self.saved.into_iter().map(|b| Ok(b))).chain(stream)
   }
 }
 
 impl<S> From<S> for ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   fn from(s: S) -> ReadableByteStream<S> {
-    ReadableByteStream { stream: s.fuse(), prefix: None }
+    ReadableByteStream { stream: s.fuse(), saved: VecDeque::new(), saved_count: 0 }
   }
 }
 
@@ -96,17 +101,17 @@ impl<S> From<S> for ReadableByteStream<S> where S: Stream<Item = Bytes, Error = 
 // ----- StreamReadFuture
 
 #[must_use = "futures do nothing unless polled"]
-pub struct StreamReadFuture<'a, S> where S: Stream<Item = Bytes, Error = io::Error> + 'a {
-  stream: &'a mut ReadableByteStream<S>,
+pub struct ReadableByteStreamFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
+  stream: Option<Fuse<S>>,
   count: usize,
   mode: ReadMode,
 
   // internal state:
   saved: VecDeque<Bytes>,
-  total_saved: usize
+  saved_count: usize
 }
 
-impl<'a, S> StreamReadFuture<'a, S> where S: Stream<Item = Bytes, Error = io::Error> {
+impl<S> ReadableByteStreamFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
   /// Drain up to `count` bytes from the saved deque, returning a new vector
   /// to avoid copying buffers.
   ///
@@ -122,12 +127,12 @@ impl<'a, S> StreamReadFuture<'a, S> where S: Stream<Item = Bytes, Error = io::Er
       let chunk = self.saved.pop_front().unwrap();
       if (length + chunk.len() <= self.count) || self.mode == ReadMode::Lazy {
         length += chunk.len();
-        self.total_saved -= chunk.len();
+        self.saved_count -= chunk.len();
         vec.push(chunk);
       } else {
         let n = self.count - length;
         length += n;
-        self.total_saved -= n;
+        self.saved_count -= n;
         vec.push(chunk.slice(0, n));
         self.saved.push_front(chunk.slice_from(n));
       }
@@ -139,44 +144,45 @@ impl<'a, S> StreamReadFuture<'a, S> where S: Stream<Item = Bytes, Error = io::Er
   /*
    * assuming we have collected as many bytes as we need, or as many bytes
    * as we CAN, drain off enough `Bytes` objects to fill the original request
-   * (or try), return any unused buffer (there should be at most one), and
-   * return the original stream.
+   * (or try), and return a new `ReadableByteStream` representing the rest of
+   * the stream.
    */
-  fn complete(&mut self) -> ByteFrame {
+  fn complete(&mut self, stream: Fuse<S>) -> (ByteFrame, ReadableByteStream<S>) {
     let frame = self.drain();
     assert!(self.saved.len() <= 1);
-    self.stream.prefix = self.saved.pop_front();
-    frame
-    // StreamReadFutureResult { frame: frame, remainder: remainder, stream: self.stream.take().expect("") }
+    ( frame, ReadableByteStream { stream, saved: self.saved.clone(), saved_count: self.saved_count } )
   }
 }
 
-impl<'a, S> Future for StreamReadFuture<'a, S> where S: Stream<Item = Bytes, Error = io::Error> {
-  type Item = ByteFrame;
+impl<S> Future for ReadableByteStreamFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
+  type Item = (ByteFrame, ReadableByteStream<S>);
   type Error = io::Error;
 
   fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
     loop {
-      if self.total_saved >= self.count {
-        return Ok(Async::Ready(self.complete()))
+      let mut stream = self.stream.take().expect("stream in use");
+      if self.saved_count >= self.count {
+        return Ok(Async::Ready(self.complete(stream)))
       }
 
-      match self.stream.stream.poll() {
+      match stream.poll() {
         Ok(Async::NotReady) => {
+          self.stream = Some(stream);
           return Ok(Async::NotReady);
         }
 
         // end of stream
         Ok(Async::Ready(None)) => {
-          if self.mode == ReadMode::Exact && (self.total_saved < self.count) {
+          if self.mode == ReadMode::Exact && (self.saved_count < self.count) {
             return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"));
           } else {
-            return Ok(Async::Ready(self.complete()));
+            return Ok(Async::Ready(self.complete(stream)));
           }
         }
 
         Ok(Async::Ready(Some(buffer))) => {
-          self.total_saved += buffer.len();
+          self.stream = Some(stream);
+          self.saved_count += buffer.len();
           self.saved.push_back(buffer);
           // fall through to check if we have enough buffered to exit.
         }
@@ -192,15 +198,6 @@ impl<'a, S> Future for StreamReadFuture<'a, S> where S: Stream<Item = Bytes, Err
   }
 }
 
-
-// ----- StreamReadFutureResult
-//
-// struct StreamReadFutureResult<S> where S: Stream<Item = Bytes, Error = io::Error> {
-//   frame: ByteFrame,
-//   stream: Fuse<S>,
-//   remainder: Option<Bytes>
-// }
-//
 
 // ----- ByteFrame
 

@@ -2,7 +2,7 @@ use bytes::Bytes;
 use std::io;
 use futures::{Async, Future, Poll, Stream};
 
-use stream_reader::{ByteFrame, StreamReader, StreamReaderMode, StreamReaderResult};
+use stream_reader::{ByteFrame, ReadableByteStream, ReadableByteStreamFuture, ReadMode};
 
 /// `Stream<Bytes>` that buffers data until it reaches a desired block size,
 /// then emits a single `ByteFrame` (a vector of `Bytes`). If `exact` is set,
@@ -10,20 +10,20 @@ use stream_reader::{ByteFrame, StreamReader, StreamReaderMode, StreamReaderResul
 /// a `Bytes`. (If we hit the end of the stream, the final block may be
 /// smaller.)
 #[must_use = "streams do nothing unless polled"]
-pub struct BufferedStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
-  stream: Option<StreamReader<S>>,
+pub struct BufferedByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
+  future: Option<ReadableByteStreamFuture<S>>,
   block_size: usize,
-  mode: StreamReaderMode
+  mode: ReadMode
 }
 
-impl<S> BufferedStream<S>
+impl<S> BufferedByteStream<S>
   where S: Stream<Item = Bytes, Error = io::Error>
 {
-  pub fn new(s: S, block_size: usize, exact: bool) -> BufferedStream<S> {
+  pub fn new(s: S, block_size: usize, exact: bool) -> BufferedByteStream<S> {
     assert!(block_size > 0);
-    let mode = if exact { StreamReaderMode::AtMost } else { StreamReaderMode::Lazy };
-    BufferedStream {
-      stream: Some(StreamReader::read(s, block_size, mode, None)),
+    let mode = if exact { ReadMode::AtMost } else { ReadMode::Lazy };
+    BufferedByteStream {
+      future: Some(ReadableByteStream::from(s).read(block_size, mode)),
       block_size: block_size,
       mode: mode
     }
@@ -34,19 +34,22 @@ impl<S> BufferedStream<S>
   }
 }
 
-impl<S> Stream for BufferedStream<S>
+impl<S> Stream for BufferedByteStream<S>
   where S: Stream<Item = Bytes, Error = io::Error>
 {
   type Item = ByteFrame;
   type Error = io::Error;
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-    match self.stream.as_mut().expect("polling stream twice").poll() {
+    let mut future = self.future.take().expect("stream in use");
+    match future.poll() {
       Err(e) => Err(e),
-      Ok(Async::NotReady) => Ok(Async::NotReady),
-      Ok(Async::Ready(result)) => {
-        let StreamReaderResult { frame, remainder, stream } = result;
-        self.stream = Some(StreamReader::read(stream, self.block_size, self.mode, remainder));
+      Ok(Async::NotReady) => {
+        self.future = Some(future);
+        Ok(Async::NotReady)
+      },
+      Ok(Async::Ready((frame, stream))) => {
+        self.future = Some(stream.read(self.block_size, self.mode));
         if frame.length == 0 { Ok(Async::Ready(None)) } else { Ok(Async::Ready(Some(frame))) }
       }
     }
