@@ -33,7 +33,7 @@ pub enum ReadMode {
 /// subsequent requests. You may use `into_stream()` to create a `Stream`
 /// object that combines the leftover prefix with the remaining stream.
 pub struct ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
-  stream: Option<Fuse<S>>,
+  stream: Fuse<S>,
   prefix: Option<Bytes>
 }
 
@@ -41,7 +41,7 @@ impl<S> ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   /// Read `count` bytes from a stream, returning a `Future<ByteFrame>` with
   /// a `Vec<Bytes>` of the cumulative buffers.
   pub fn read<'a>(&'a mut self, count: usize, mode: ReadMode)
-    -> impl Future<Item = ByteFrame, Error = io::Error> + 'a
+    -> StreamReadFuture<'a, S>
   {
     let mut saved = VecDeque::new();
     let total_saved = match self.prefix {
@@ -49,19 +49,13 @@ impl<S> ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
       Some(ref b) => b.len()
     };
     saved.extend(self.prefix.take().into_iter());
-    let future = StreamReadFuture {
-      stream: self.stream.take(),
+    StreamReadFuture {
+      stream: self,
       count: count,
       mode: mode,
       saved: saved,
       total_saved: total_saved
-    };
-    Robey { stream: self, future }
-    // future.map(move |result| {
-    //   self.stream = Some(result.stream);
-    //   self.prefix = result.remainder;
-    //   result.frame
-    // })
+    }
   }
 
   /// Read exactly `count` bytes from a stream, returning a `ByteFrame`
@@ -69,7 +63,7 @@ impl<S> ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   /// If not enough bytes are available on the stream before EOF, an EOF error
   /// is returned.
   pub fn read_exact<'a>(&'a mut self, count: usize)
-    -> impl Future<Item = ByteFrame, Error = io::Error> + 'a
+    -> StreamReadFuture<'a, S>
   {
     self.read(count, ReadMode::Exact)
   }
@@ -79,58 +73,31 @@ impl<S> ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   /// If not enough bytes are available on the stream before EOF, the frame
   /// may contain fewer bytes than requested.
   pub fn read_at_most<'a>(&'a mut self, count: usize)
-    -> impl Future<Item = ByteFrame, Error = io::Error> + 'a
+    -> StreamReadFuture<'a, S>
   {
     self.read(count, ReadMode::AtMost)
   }
 
   /// Merge any remainder buffer back into the stream as if it had been
   /// "un-read". This consumes `self`, returning the new combined stream.
-  pub fn into_stream(mut self) -> impl Stream<Item = Bytes, Error = io::Error> {
-    let stream = self.stream.take().expect("stream is in use");
+  pub fn into_stream(self) -> impl Stream<Item = Bytes, Error = io::Error> {
+    let stream = self.stream;
     stream::iter(self.prefix.into_iter().map(|b| Ok(b))).chain(stream)
   }
 }
 
 impl<S> From<S> for ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   fn from(s: S) -> ReadableByteStream<S> {
-    ReadableByteStream { stream: Some(s.fuse()), prefix: None }
+    ReadableByteStream { stream: s.fuse(), prefix: None }
   }
 }
-
-
-pub struct Robey<'a, S> where S: Stream<Item = Bytes, Error = io::Error> + 'a {
-  stream: &'a mut ReadableByteStream<S>,
-  future: StreamReadFuture<S>
-}
-
-impl<'a, S> Future for Robey<'a, S> where S: Stream<Item = Bytes, Error = io::Error> {
-  type Item = ByteFrame;
-  type Error = io::Error;
-
-  fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-    match self.future.poll() {
-      Err(e) => Err(e),
-      Ok(Async::NotReady) => Ok(Async::NotReady),
-      Ok(Async::Ready(result)) => {
-        self.stream.stream = Some(result.stream);
-        self.stream.prefix = result.remainder;
-        Ok(Async::Ready(result.frame))
-      }
-    }
-  }
-}
-
-
-
-
 
 
 // ----- StreamReadFuture
 
 #[must_use = "futures do nothing unless polled"]
-struct StreamReadFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
-  stream: Option<Fuse<S>>,
+pub struct StreamReadFuture<'a, S> where S: Stream<Item = Bytes, Error = io::Error> + 'a {
+  stream: &'a mut ReadableByteStream<S>,
   count: usize,
   mode: ReadMode,
 
@@ -139,7 +106,7 @@ struct StreamReadFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
   total_saved: usize
 }
 
-impl<S> StreamReadFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
+impl<'a, S> StreamReadFuture<'a, S> where S: Stream<Item = Bytes, Error = io::Error> {
   /// Drain up to `count` bytes from the saved deque, returning a new vector
   /// to avoid copying buffers.
   ///
@@ -175,16 +142,17 @@ impl<S> StreamReadFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
    * (or try), return any unused buffer (there should be at most one), and
    * return the original stream.
    */
-  fn complete(&mut self) -> StreamReadFutureResult<S> {
+  fn complete(&mut self) -> ByteFrame {
     let frame = self.drain();
     assert!(self.saved.len() <= 1);
-    let remainder = self.saved.pop_front();
-    StreamReadFutureResult { frame: frame, remainder: remainder, stream: self.stream.take().expect("") }
+    self.stream.prefix = self.saved.pop_front();
+    frame
+    // StreamReadFutureResult { frame: frame, remainder: remainder, stream: self.stream.take().expect("") }
   }
 }
 
-impl<S> Future for StreamReadFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
-  type Item = StreamReadFutureResult<S>;
+impl<'a, S> Future for StreamReadFuture<'a, S> where S: Stream<Item = Bytes, Error = io::Error> {
+  type Item = ByteFrame;
   type Error = io::Error;
 
   fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -193,7 +161,7 @@ impl<S> Future for StreamReadFuture<S> where S: Stream<Item = Bytes, Error = io:
         return Ok(Async::Ready(self.complete()))
       }
 
-      match self.stream.as_mut().expect("stream in use").poll() {
+      match self.stream.stream.poll() {
         Ok(Async::NotReady) => {
           return Ok(Async::NotReady);
         }
@@ -226,13 +194,13 @@ impl<S> Future for StreamReadFuture<S> where S: Stream<Item = Bytes, Error = io:
 
 
 // ----- StreamReadFutureResult
-
-struct StreamReadFutureResult<S> where S: Stream<Item = Bytes, Error = io::Error> {
-  frame: ByteFrame,
-  stream: Fuse<S>,
-  remainder: Option<Bytes>
-}
-
+//
+// struct StreamReadFutureResult<S> where S: Stream<Item = Bytes, Error = io::Error> {
+//   frame: ByteFrame,
+//   stream: Fuse<S>,
+//   remainder: Option<Bytes>
+// }
+//
 
 // ----- ByteFrame
 
