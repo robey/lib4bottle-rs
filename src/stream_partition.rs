@@ -170,25 +170,3 @@ impl<S, P, R> Stream for RightStream<S, P, R>
     inner.stream.poll()
   }
 }
-
-
-// ----- Inner
-
-
-pub struct SharedStream<S: Stream> {
-  inner: Arc<Mutex<S>>
-}
-
-impl<S> SharedStream<S>
-  where S: Stream
-{
-  pub fn clone(&self) -> SharedStream<S> {
-    SharedStream { inner: self.inner.clone() }
-  }
-}
-
-pub fn robey<S>(s: S) -> SharedStream<S>
-  where S: Stream<Item = Bytes, Error = io::Error>
-{
-  SharedStream { inner: Arc::new(Mutex::new(s)) }
-}
