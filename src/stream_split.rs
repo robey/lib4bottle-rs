@@ -1,7 +1,25 @@
-use bytes::Bytes;
 use futures::{Async, Future, IntoFuture, Poll, Stream, task};
-use std::io;
 use std::sync::{Arc, Mutex};
+
+pub trait StreamSplit {
+  fn split_when<P, R>(self, condition: P) -> (LeftStream<Self, P, R>, RightStream<Self, P, R>)
+    where
+      Self: Stream + Sized,
+      P: FnMut(&Self::Item) -> R,
+      R: IntoFuture<Item = bool, Error = Self::Error>;
+}
+
+impl<S> StreamSplit for S where S: Stream + Sized {
+  fn split_when<P, R>(self, condition: P) -> (LeftStream<Self, P, R>, RightStream<Self, P, R>)
+    where
+      P: FnMut(&S::Item) -> R,
+      R: IntoFuture<Item = bool, Error = S::Error>
+  {
+    let inner = Arc::new(Mutex::new(Inner::new(self, condition)));
+    ( LeftStream { inner: inner.clone() }, RightStream { inner: inner.clone() } )
+  }
+}
+
 
 // left state:
 //   - left stream: normal
@@ -43,6 +61,17 @@ impl<S, P, R> Inner<S, P, R>
     P: FnMut(&S::Item) -> R,
     R: IntoFuture<Item = bool, Error = S::Error>
 {
+  fn new(stream: S, predicate: P) -> Inner<S, P, R> {
+    Inner {
+      state: State::Left,
+      stream,
+      predicate,
+      pending_future: None,
+      pending_item: None,
+      right_task: None
+    }
+  }
+
   fn poll_pending(&mut self) -> Poll<bool, S::Error> {
     if self.pending_future.is_some() {
       return Ok(Async::Ready(true));
@@ -78,16 +107,6 @@ pub struct LeftStream<S, P, R> where S: Stream, R: IntoFuture {
   inner: Arc<Mutex<Inner<S, P, R>>>,
 }
 
-// impl<S, P, R> StreamPartition<S, P, R> where S: Stream, R: IntoFuture {
-//   pub fn new(s: S, p: P) -> StreamPartition<S, P, R> where P: FnMut(&S::Item) -> R, R: IntoFuture<Item = bool, Error = S::Error> {
-//     StreamPartition {
-//       inner: Box::new(Inner { stream: s, pred: p }),
-//       pred: p,
-//       first_stream: s.take_while(p).boxed()
-//     }
-//   }
-// }
-
 impl<S, P, R> Stream for LeftStream<S, P, R>
   where
     S: Stream,
@@ -119,14 +138,14 @@ impl<S, P, R> Stream for LeftStream<S, P, R>
             Err(e)
           },
           Ok(Async::NotReady) => Ok(Async::NotReady),
-          Ok(Async::Ready(false)) => {
+          Ok(Async::Ready(true)) => {
             // transition:
             inner.pending_future = None;
             inner.state = State::Right;
             for t in inner.right_task.take() { t.unpark() };
             Ok(Async::Ready(None))
           },
-          Ok(Async::Ready(true)) => {
+          Ok(Async::Ready(false)) => {
             let item = inner.pending_item.take().unwrap();
             inner.clear_pending();
             Ok(Async::Ready(Some(item)))
@@ -161,8 +180,8 @@ impl<S, P, R> Stream for RightStream<S, P, R>
       return Ok(Async::NotReady);
     }
 
+    // handle any leftover item that caused the transition.
     if inner.pending_item.is_some() {
-      // leftover item that failed the predicate, causing us to switch to this state.
       let item = inner.pending_item.take().unwrap();
       return Ok(Async::Ready(Some(item)));
     }
