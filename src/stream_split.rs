@@ -1,22 +1,35 @@
 use futures::{Async, Future, IntoFuture, Poll, Stream, task};
 use std::sync::{Arc, Mutex};
 
-pub trait StreamSplit {
-  fn split_when<P, R>(self, is_last: P) -> (LeftStream<Self, P, R>, RightStream<Self, P, R>)
+pub trait SplitUntil {
+  /// Split this stream in two, using a function to determine which item is
+  /// the split point.
+  ///
+  /// Returns a `SplitStream` representing the stream up to the split point,
+  /// and a `SplitFuture` which will resolve once the `SplitStream` has been
+  /// drained.
+  ///
+  /// As items arrive, they are passed to `is_last`, which will return a
+  /// `Future<bool>` to determine if the split stream should end after this
+  /// item. Each item will be fed into `SplitStream` after `is_last`
+  /// resolves. If `is_last` resolves to true, the `SplitStream` is
+  /// completed, and `SplitFuture` resolves to the remainder of the original
+  /// stream.
+  fn split_until<P, R>(self, is_last: P) -> (SplitStream<Self, P, R>, SplitFuture<Self, P, R>)
     where
       Self: Stream + Sized,
       P: FnMut(&Self::Item) -> R,
       R: IntoFuture<Item = bool, Error = Self::Error>;
 }
 
-impl<S> StreamSplit for S where S: Stream + Sized {
-  fn split_when<P, R>(self, is_last: P) -> (LeftStream<Self, P, R>, RightStream<Self, P, R>)
+impl<S> SplitUntil for S where S: Stream + Sized {
+  fn split_until<P, R>(self, is_last: P) -> (SplitStream<Self, P, R>, SplitFuture<Self, P, R>)
     where
       P: FnMut(&S::Item) -> R,
       R: IntoFuture<Item = bool, Error = S::Error>
   {
     let inner = Arc::new(Mutex::new(Inner::new(self, is_last)));
-    ( LeftStream { inner: inner.clone() }, RightStream { inner: inner.clone() } )
+    ( SplitStream { inner: inner.clone() }, SplitFuture { inner: inner.clone() } )
   }
 }
 
@@ -34,25 +47,29 @@ impl<S> StreamSplit for S where S: Stream + Sized {
 //   - left stream: ready(none)
 //   - right stream: any popped item, then normal
 
-/// Which stream is currently "active"?
-#[derive(Clone, PartialEq)]
-enum State {
-  Left,
-  Right
+enum FeederState {
+  // waiting for the stream to produce an item:
+  Waiting,
+
+  // the stream has ended:
+  Finished,
+
+  // an item has been fed to `is_last`:
+  Processing
 }
 
-// data shared by both left & right
+// data shared by both SplitStream & SplitFuture
 struct Inner<S, P, R> where S: Stream, R: IntoFuture {
-  state: State,
-  stream: S,
+  stream: Option<S>,
   is_last: P,
+  complete: bool,
 
   // when we have an item, but we're waiting for the future to complete:
   pending_future: Option<R::Future>,
   pending_item: Option<S::Item>,
 
   // when someone tried to read the right stream before it started:
-  right_task: Option<task::Task>,
+  remainder_task: Option<task::Task>,
 }
 
 impl<S, P, R> Inner<S, P, R>
@@ -63,31 +80,30 @@ impl<S, P, R> Inner<S, P, R>
 {
   fn new(stream: S, is_last: P) -> Inner<S, P, R> {
     Inner {
-      state: State::Left,
-      stream,
+      stream: Some(stream),
       is_last,
+      complete: false,
       pending_future: None,
       pending_item: None,
-      right_task: None
+      remainder_task: None
     }
   }
 
-  fn poll_pending(&mut self) -> Poll<bool, S::Error> {
+  // poll the stream for another item. if an item is ready, feed it to the
+  // `is_last` function.
+  fn feed(&mut self) -> Result<FeederState, S::Error> {
     if self.pending_future.is_some() {
-      return Ok(Async::Ready(true));
+      return Ok(FeederState::Processing);
     }
 
-    match self.stream.poll() {
-      Err(e) => {
-        self.clear_pending();
-        Err(e)
-      },
-      Ok(Async::NotReady) => Ok(Async::NotReady),
-      Ok(Async::Ready(None)) => Ok(Async::Ready(false)),
+    match self.stream.as_mut().expect("stream in use").poll() {
+      Err(e) => Err(e),
+      Ok(Async::NotReady) => Ok(FeederState::Waiting),
+      Ok(Async::Ready(None)) => Ok(FeederState::Finished),
       Ok(Async::Ready(Some(item))) => {
         self.pending_future = Some((self.is_last)(&item).into_future());
         self.pending_item = Some(item);
-        Ok(Async::Ready(true))
+        Ok(FeederState::Processing)
       },
     }
   }
@@ -97,23 +113,23 @@ impl<S, P, R> Inner<S, P, R>
     self.pending_item = None;
   }
 
-  // switch from left mode to right mode.
-  fn transition(&mut self) {
+  // the SplitStream has finished. tell SplitFuture, if necessary.
+  fn finish(&mut self) {
     self.clear_pending();
-    self.state = State::Right;
-    for t in self.right_task.take() { t.unpark() };
+    self.complete = true;
+    for t in self.remainder_task.take() { t.unpark() };
   }
 }
 
 
-// ----- LeftStream
+// ----- SplitStream
 
 #[must_use = "streams do nothing unless polled"]
-pub struct LeftStream<S, P, R> where S: Stream, R: IntoFuture {
+pub struct SplitStream<S, P, R> where S: Stream, R: IntoFuture {
   inner: Arc<Mutex<Inner<S, P, R>>>,
 }
 
-impl<S, P, R> Stream for LeftStream<S, P, R>
+impl<S, P, R> Stream for SplitStream<S, P, R>
   where
     S: Stream,
     P: FnMut(&S::Item) -> R,
@@ -124,20 +140,22 @@ impl<S, P, R> Stream for LeftStream<S, P, R>
 
   fn poll(&mut self) -> Poll<Option<S::Item>, S::Error> {
     let mut inner = self.inner.lock().unwrap();
-    if inner.state == State::Right {
+    if inner.complete {
       return Ok(Async::Ready(None));
     }
 
-    match inner.poll_pending() {
-      Err(e) => Err(e),
-      Ok(Async::NotReady) => Ok(Async::NotReady),
-      Ok(Async::Ready(false)) => {
-        // end of stream: transition anyway.
-        inner.state = State::Right;
-        for t in inner.right_task.take() { t.unpark() };
+    match inner.feed() {
+      Err(e) => {
+        inner.clear_pending();
+        Err(e)
+      },
+      Ok(FeederState::Waiting) => Ok(Async::NotReady),
+      Ok(FeederState::Finished) => {
+        // end of stream.
+        inner.finish();
         Ok(Async::Ready(None))
       },
-      Ok(Async::Ready(true)) => {
+      Ok(FeederState::Processing) => {
         match inner.pending_future.as_mut().unwrap().poll() {
           Err(e) => {
             inner.clear_pending();
@@ -147,7 +165,7 @@ impl<S, P, R> Stream for LeftStream<S, P, R>
           Ok(Async::Ready(last)) => {
             let item = inner.pending_item.take().unwrap();
             if last {
-              inner.transition();
+              inner.finish();
             } else {
               inner.clear_pending();
             }
@@ -162,32 +180,27 @@ impl<S, P, R> Stream for LeftStream<S, P, R>
 
 // ----- RightStream
 
-#[must_use = "streams do nothing unless polled"]
-pub struct RightStream<S, P, R> where S: Stream, R: IntoFuture {
+#[must_use = "futures do nothing unless polled"]
+pub struct SplitFuture<S, P, R> where S: Stream, R: IntoFuture {
   inner: Arc<Mutex<Inner<S, P, R>>>,
 }
 
-impl<S, P, R> Stream for RightStream<S, P, R>
+impl<S, P, R> Future for SplitFuture<S, P, R>
   where
     S: Stream,
     P: FnMut(&S::Item) -> R,
     R: IntoFuture<Item = bool, Error = S::Error>
 {
-  type Item = S::Item;
+  type Item = S;
   type Error = S::Error;
 
-  fn poll(&mut self) -> Poll<Option<S::Item>, S::Error> {
+  fn poll(&mut self) -> Poll<S, S::Error> {
     let mut inner = self.inner.lock().unwrap();
-    if inner.state == State::Left {
-      inner.right_task = Some(task::park());
+    if !inner.complete {
+      inner.remainder_task = Some(task::park());
       return Ok(Async::NotReady);
     }
 
-    inner.stream.poll()
+    Ok(Async::Ready(inner.stream.take().expect("stream in use")))
   }
-
-  // fn into_inner(self) -> S {
-  //   let mut inner = self.inner.lock().unwrap();
-  //   inner.stream
-  // }
 }
