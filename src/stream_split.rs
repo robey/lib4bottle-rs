@@ -2,7 +2,7 @@ use futures::{Async, Future, IntoFuture, Poll, Stream, task};
 use std::sync::{Arc, Mutex};
 
 pub trait StreamSplit {
-  fn split_when<P, R>(self, condition: P) -> (LeftStream<Self, P, R>, RightStream<Self, P, R>)
+  fn split_when<P, R>(self, is_last: P) -> (LeftStream<Self, P, R>, RightStream<Self, P, R>)
     where
       Self: Stream + Sized,
       P: FnMut(&Self::Item) -> R,
@@ -10,12 +10,12 @@ pub trait StreamSplit {
 }
 
 impl<S> StreamSplit for S where S: Stream + Sized {
-  fn split_when<P, R>(self, condition: P) -> (LeftStream<Self, P, R>, RightStream<Self, P, R>)
+  fn split_when<P, R>(self, is_last: P) -> (LeftStream<Self, P, R>, RightStream<Self, P, R>)
     where
       P: FnMut(&S::Item) -> R,
       R: IntoFuture<Item = bool, Error = S::Error>
   {
-    let inner = Arc::new(Mutex::new(Inner::new(self, condition)));
+    let inner = Arc::new(Mutex::new(Inner::new(self, is_last)));
     ( LeftStream { inner: inner.clone() }, RightStream { inner: inner.clone() } )
   }
 }
@@ -45,7 +45,7 @@ enum State {
 struct Inner<S, P, R> where S: Stream, R: IntoFuture {
   state: State,
   stream: S,
-  predicate: P,
+  is_last: P,
 
   // when we have an item, but we're waiting for the future to complete:
   pending_future: Option<R::Future>,
@@ -61,11 +61,11 @@ impl<S, P, R> Inner<S, P, R>
     P: FnMut(&S::Item) -> R,
     R: IntoFuture<Item = bool, Error = S::Error>
 {
-  fn new(stream: S, predicate: P) -> Inner<S, P, R> {
+  fn new(stream: S, is_last: P) -> Inner<S, P, R> {
     Inner {
       state: State::Left,
       stream,
-      predicate,
+      is_last,
       pending_future: None,
       pending_item: None,
       right_task: None
@@ -85,7 +85,7 @@ impl<S, P, R> Inner<S, P, R>
       Ok(Async::NotReady) => Ok(Async::NotReady),
       Ok(Async::Ready(None)) => Ok(Async::Ready(false)),
       Ok(Async::Ready(Some(item))) => {
-        self.pending_future = Some((self.predicate)(&item).into_future());
+        self.pending_future = Some((self.is_last)(&item).into_future());
         self.pending_item = Some(item);
         Ok(Async::Ready(true))
       },
@@ -97,6 +97,12 @@ impl<S, P, R> Inner<S, P, R>
     self.pending_item = None;
   }
 
+  // switch from left mode to right mode.
+  fn transition(&mut self) {
+    self.clear_pending();
+    self.state = State::Right;
+    for t in self.right_task.take() { t.unpark() };
+  }
 }
 
 
@@ -138,16 +144,13 @@ impl<S, P, R> Stream for LeftStream<S, P, R>
             Err(e)
           },
           Ok(Async::NotReady) => Ok(Async::NotReady),
-          Ok(Async::Ready(true)) => {
-            // transition:
-            inner.pending_future = None;
-            inner.state = State::Right;
-            for t in inner.right_task.take() { t.unpark() };
-            Ok(Async::Ready(None))
-          },
-          Ok(Async::Ready(false)) => {
+          Ok(Async::Ready(last)) => {
             let item = inner.pending_item.take().unwrap();
-            inner.clear_pending();
+            if last {
+              inner.transition();
+            } else {
+              inner.clear_pending();
+            }
             Ok(Async::Ready(Some(item)))
           }
         }
@@ -180,12 +183,11 @@ impl<S, P, R> Stream for RightStream<S, P, R>
       return Ok(Async::NotReady);
     }
 
-    // handle any leftover item that caused the transition.
-    if inner.pending_item.is_some() {
-      let item = inner.pending_item.take().unwrap();
-      return Ok(Async::Ready(Some(item)));
-    }
-
     inner.stream.poll()
   }
+
+  // fn into_inner(self) -> S {
+  //   let mut inner = self.inner.lock().unwrap();
+  //   inner.stream
+  // }
 }
