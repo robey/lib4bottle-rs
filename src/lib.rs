@@ -7,7 +7,6 @@ extern crate futures;
 extern crate lazy_static;
 
 // these could really be in a shared library somewhere:
-pub mod hex;
 pub mod stream_split;
 
 // intrinsic to 4bottle format:
