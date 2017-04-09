@@ -4,7 +4,7 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod test_stream_generator {
   use futures::{future, Future, stream, Stream};
-  use lib4bottle::stream_generator::{generate};
+  use lib4bottle::stream_toolkit::generate;
   use std::{io, thread, time};
 
   #[test]

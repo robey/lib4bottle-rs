@@ -47,7 +47,7 @@ struct Inner<St, Fut: IntoFuture> {
 /// ```
 ///
 /// FIXME: say moar
-pub fn generate<St, F, Fut, It>(state: St, f: F)
+pub fn generate_stream<St, F, Fut, It>(state: St, f: F)
   -> (StreamGenerator<St, F, Fut>, StreamGeneratorCompletion<St, Fut>)
   where
     F: FnMut(St) -> Fut,

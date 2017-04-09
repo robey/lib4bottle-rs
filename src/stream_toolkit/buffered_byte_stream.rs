@@ -2,7 +2,7 @@ use bytes::Bytes;
 use std::io;
 use futures::{Async, Future, Poll, Stream};
 
-use stream_reader::{ByteFrame, ReadableByteStream, ReadableByteStreamFuture, ReadMode};
+use super::{ByteFrame, ReadableByteStream, ReadableByteStreamFuture, ReadMode};
 
 /// `Stream<Bytes>` that buffers data until it reaches a desired block size,
 /// then emits a single `ByteFrame` (a vector of `Bytes`). If `exact` is set,
