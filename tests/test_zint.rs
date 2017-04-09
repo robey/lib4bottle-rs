@@ -4,8 +4,7 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod test_zint {
   use bytes::{Bytes};
-  use std::io;
-  use lib4bottle::hex::{FromHex, ToHex};
+  use lib4bottle::stream_toolkit::{FromHex, ToHex};
   use lib4bottle::zint;
 
   #[test]
@@ -61,28 +60,69 @@ mod test_zint {
 
   #[test]
   fn decode_first_length_byte() {
-    assert_eq!(zint::decode_first_length_byte(0x01), ( 0, 1 ));
-    assert_eq!(zint::decode_first_length_byte(0x0f), ( 0, 15 ));
-    assert_eq!(zint::decode_first_length_byte(0x3f), ( 0, 63 ));
-    assert_eq!(zint::decode_first_length_byte(0x40), ( 1, 0 ));
-    assert_eq!(zint::decode_first_length_byte(0x4f), ( 1, 15 ));
-    assert_eq!(zint::decode_first_length_byte(0x5f), ( 1, 31 ));
-    assert_eq!(zint::decode_first_length_byte(0x80), ( 2, 0 ));
-    assert_eq!(zint::decode_first_length_byte(0xbf), ( 2, 63 ));
+    assert_eq!(zint::decode_first_length_byte(0x00), ( 0, zint::FrameLength::EndOfStream ));
+    assert_eq!(zint::decode_first_length_byte(0x01), ( 0, zint::FrameLength::Length(1) ));
+    assert_eq!(zint::decode_first_length_byte(0x0f), ( 0, zint::FrameLength::Length(15) ));
+    assert_eq!(zint::decode_first_length_byte(0x3f), ( 0, zint::FrameLength::Length(63) ));
+    assert_eq!(zint::decode_first_length_byte(0x40), ( 1, zint::FrameLength::Length(0) ));
+    assert_eq!(zint::decode_first_length_byte(0x4f), ( 1, zint::FrameLength::Length(15) ));
+    assert_eq!(zint::decode_first_length_byte(0x5f), ( 1, zint::FrameLength::Length(31) ));
+    assert_eq!(zint::decode_first_length_byte(0x80), ( 2, zint::FrameLength::Length(0) ));
+    assert_eq!(zint::decode_first_length_byte(0xbf), ( 2, zint::FrameLength::Length(63) ));
+    assert_eq!(zint::decode_first_length_byte(0xff), ( 0, zint::FrameLength::EndOfBottle ));
   }
 
   #[test]
   fn decode_length() {
-    assert_eq!(zint::decode_length(0, Bytes::from("01".from_hex()).as_ref()), 1);
-    assert_eq!(zint::decode_length(1, Bytes::from("".from_hex()).as_ref()), 1);
-    assert_eq!(zint::decode_length(15, Bytes::from("".from_hex()).as_ref()), 15);
-    assert_eq!(zint::decode_length(0, Bytes::from("64".from_hex()).as_ref()), 100);
-    assert_eq!(zint::decode_length(0, Bytes::from("81".from_hex()).as_ref()), 129);
-    assert_eq!(zint::decode_length(0, Bytes::from("7f".from_hex()).as_ref()), 127);
-    assert_eq!(zint::decode_length(1, Bytes::from("00".from_hex()).as_ref()), 256);
-    assert_eq!(zint::decode_length(4, Bytes::from("00".from_hex()).as_ref()), 1024);
-    assert_eq!(zint::decode_length(0x30, Bytes::from("39".from_hex()).as_ref()), 12345);
-    assert_eq!(zint::decode_length(0x3d, Bytes::from("043a".from_hex()).as_ref()), 3998778);
-    assert_eq!(zint::decode_length(0x20, Bytes::from("0000".from_hex()).as_ref()), 1 << 21);
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::EndOfStream, Bytes::from("".from_hex()).as_ref()),
+      zint::FrameLength::EndOfStream
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(0), Bytes::from("01".from_hex()).as_ref()),
+      zint::FrameLength::Length(1)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(1), Bytes::from("".from_hex()).as_ref()),
+      zint::FrameLength::Length(1)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(15), Bytes::from("".from_hex()).as_ref()),
+      zint::FrameLength::Length(15)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(0), Bytes::from("64".from_hex()).as_ref()),
+      zint::FrameLength::Length(100)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(0), Bytes::from("81".from_hex()).as_ref()),
+      zint::FrameLength::Length(129)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(0), Bytes::from("7f".from_hex()).as_ref()),
+      zint::FrameLength::Length(127)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(1), Bytes::from("00".from_hex()).as_ref()),
+      zint::FrameLength::Length(256)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(4), Bytes::from("00".from_hex()).as_ref()),
+      zint::FrameLength::Length(1024)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(0x30), Bytes::from("39".from_hex()).as_ref()), zint::FrameLength::Length(12345)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(0x3d), Bytes::from("043a".from_hex()).as_ref()), zint::FrameLength::Length(3998778)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::Length(0x20), Bytes::from("0000".from_hex()).as_ref()),
+      zint::FrameLength::Length(1 << 21)
+    );
+    assert_eq!(
+      zint::decode_length(zint::FrameLength::EndOfBottle, Bytes::from("".from_hex()).as_ref()),
+      zint::FrameLength::EndOfBottle
+    );
   }
 }

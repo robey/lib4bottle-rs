@@ -1,24 +1,15 @@
+#![feature(conservative_impl_trait)]
+
 extern crate bytes;
 extern crate futures;
 extern crate lib4bottle;
 
 #[cfg(test)]
 mod test_header {
-  // use std::io;
-  use bytes::{Bytes};
   use futures::{Future, Stream};
   use lib4bottle::header::{BottleType, Header};
-  // use lib4bottle::buffered_stream::{buffer_stream};
-  // use lib4bottle::stream_helpers::{drain_stream, make_stream_1, make_stream_4};
-  use lib4bottle::hex::{FromHex, ToHex};
-  use lib4bottle::stream_helpers::{stream_of};
-  use lib4bottle::table::{Table};
-  // use std::io;
-  // use std::iter;
-
-  // pub fn bytes123() -> Bytes {
-  //   Bytes::from(vec![ 1, 2, 3 ])
-  // }
+  use lib4bottle::stream_toolkit::{stream_of_hex, ToHex};
+  use lib4bottle::table::Table;
 
   static MAGIC_HEX: &str = "f09f8dbc0000";
 
@@ -33,60 +24,60 @@ mod test_header {
   #[test]
   #[should_panic(expected = "UnexpectedEof")]
   fn validate_header_length() {
-    Header::decode(stream_of(Bytes::from("00".from_hex()))).wait().unwrap();
+    Header::decode(stream_of_hex("00")).wait().unwrap();
   }
 
   #[test]
   #[should_panic(expected = "Incorrect magic")]
   fn validate_header_magic() {
-    Header::decode(stream_of(Bytes::from("00ff00ff00ff00ff".from_hex()))).wait().unwrap();
+    Header::decode(stream_of_hex("00ff00ff00ff00ff")).wait().unwrap();
   }
 
   #[test]
   #[should_panic(expected = "Incompatible version")]
   fn validate_header_version() {
-    Header::decode(stream_of(Bytes::from("f09f8dbcff000000".from_hex()))).wait().unwrap();
+    Header::decode(stream_of_hex("f09f8dbcff000000")).wait().unwrap();
   }
 
   #[test]
   #[should_panic(expected = "Incompatible version")]
   fn validate_header_flags() {
-    Header::decode(stream_of(Bytes::from("f09f8dbc00ff0000".from_hex()))).wait().unwrap();
+    Header::decode(stream_of_hex("f09f8dbc00ff0000")).wait().unwrap();
   }
 
   #[test]
   #[should_panic(expected = "Unknown bottle type")]
   fn validate_header_bottle_type() {
-    Header::decode(stream_of(Bytes::from("f09f8dbc0000f000".from_hex()))).wait().unwrap();
+    Header::decode(stream_of_hex("f09f8dbc0000f000")).wait().unwrap();
   }
 
   #[test]
   fn read_empty_header() {
-    let s = stream_of(Bytes::from("f09f8dbc0000a000".from_hex()));
+    let s = stream_of_hex("f09f8dbc0000a000");
     let (h, s2) = Header::decode(s).wait().unwrap();
     assert_eq!(format!("{:?}", h), "Header(Test, Table())");
     // nothing left:
-    assert_eq!(s2.collect().wait().unwrap().to_hex(), "");
+    assert_eq!(s2.into_stream().collect().wait().unwrap().to_hex(), "");
   }
 
   #[test]
   fn read_simple_header() {
-    let s = stream_of(Bytes::from("f09f8dbc0000a003800196".from_hex()));
+    let s = stream_of_hex("f09f8dbc0000a003800196");
     let (h, s2) = Header::decode(s).wait().unwrap();
     assert_eq!(format!("{:?}", h), "Header(Test, Table(N0=150))");
     // nothing left:
-    assert_eq!(s2.collect().wait().unwrap().to_hex(), "");
+    assert_eq!(s2.into_stream().collect().wait().unwrap().to_hex(), "");
   }
 
   #[test]
   fn read_sequentially() {
-    let s = stream_of(Bytes::from("f09f8dbc0000a003800196f09f8dbc0000a003800196".from_hex()));
+    let s = stream_of_hex("f09f8dbc0000a003800196f09f8dbc0000a003800196");
     let (h, s2) = Header::decode(s).wait().unwrap();
     assert_eq!(format!("{:?}", h), "Header(Test, Table(N0=150))");
     let (h2, s3) = Header::decode(s2).wait().unwrap();
     assert_eq!(format!("{:?}", h2), "Header(Test, Table(N0=150))");
     // nothing left:
-    assert_eq!(s3.collect().wait().unwrap().to_hex(), "");
+    assert_eq!(s3.into_stream().collect().wait().unwrap().to_hex(), "");
   }
 }
 

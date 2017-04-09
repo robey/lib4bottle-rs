@@ -3,9 +3,8 @@ use std::fmt;
 use std::io;
 use futures::{Future, future, Stream};
 
-use stream_helpers::{stream_of_vec};
-use stream_reader::{StreamReader};
-use table::{Table};
+use stream_toolkit::{ReadableByteStream, stream_of_vec};
+use table::Table;
 
 static MAGIC: [u8; 4] = [ 0xf0, 0x9f, 0x8d, 0xbc ];
 const VERSION: u8 = 0;
@@ -63,14 +62,13 @@ impl Header {
 
   /// Read a bottle header from a `Stream<Bytes>`, and return the header and
   /// the remainder of the stream.
-  pub fn decode<S>(s: S)
-    -> impl Future<Item = (Header, impl Stream<Item = Bytes, Error = io::Error>), Error = io::Error>
+  pub fn decode<S>(s: ReadableByteStream<S>)
+    -> impl Future<Item = (Header, ReadableByteStream<S>), Error = io::Error>
     where S: Stream<Item = Bytes, Error = io::Error>
   {
-    StreamReader::read_exact(s, 8).and_then(|( frame, s )| {
+    s.read_exact(8).and_then(|(frame, s)| {
       future::result(check_magic(frame.pack())).and_then(|( bottle_type, header_length )| {
-        println!("type {:?}, header len {}", bottle_type, header_length);
-        StreamReader::read_exact(s, header_length).and_then(|( frame, s )| {
+        s.read_exact(header_length).and_then(|(frame, s)| {
           future::result(Table::decode(frame.pack())).map(|header| {
             ( Header::new(bottle_type, header), s )
           })
