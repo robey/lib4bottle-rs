@@ -6,9 +6,7 @@ extern crate lib4bottle;
 mod test_stream_reader {
   use bytes::{Bytes};
   use futures::{Future, Stream};
-  use lib4bottle::hex::{ToHex};
-  use lib4bottle::stream_helpers::{stream_of, stream_of_vec};
-  use lib4bottle::stream_toolkit::{ReadableByteStream, ReadMode};
+  use lib4bottle::stream_toolkit::{ReadableByteStream, ReadMode, stream_of, stream_of_vec, ToHex};
 
   #[test]
   fn stream_read_exact_slices() {

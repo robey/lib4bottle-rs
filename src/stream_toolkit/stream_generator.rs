@@ -1,22 +1,25 @@
 use futures::{Async, Future, IntoFuture, Poll, Stream, task};
 use std::sync::{Arc, Mutex};
 
-enum State<St, Fut> {
+enum State<StateT, ItemFutureT, StateFutureT> {
   /// No active future is running. Ready to call the function and process the next future.
-  Ready(St),
+  Ready(StateT),
 
-  /// Currently polling this future.
-  Working(Fut),
+  /// Currently polling the future to reveal the next item.
+  WorkingOnItem(ItemFutureT),
+
+  /// Currently polling the future to reveal the next state.
+  WorkingOnState(StateFutureT),
 
   /// Stream ended!
-  Done(Option<St>),
+  Done(StateFutureT),
 
   /// Stream ended, but not in a good way.
   Error
 }
 
-struct Inner<St, Fut: IntoFuture> {
-  generator_state: Option<State<St, Fut::Future>>,
+struct Inner<StateT, ItemFutureT: IntoFuture, StateFutureT: IntoFuture> {
+  generator_state: Option<State<StateT, ItemFutureT::Future, StateFutureT::Future>>,
   task: Option<task::Task>
 }
 
@@ -39,19 +42,23 @@ struct Inner<St, Fut: IntoFuture> {
 /// As a silly example, you can generate a stream of the first 10 ints:
 ///
 /// ```rust,ignore
-/// let (stream, completion) = generate(0, |counter| {
+/// let (stream, completion) = generate_stream(0, |counter| {
 ///   future::ok::<_, io::Error>(
-///     if counter < 5 { (Some(counter), counter + 1) } else { (None, counter) }
+///     if counter < 5 { (Some(counter), future::ok(counter + 1)) } else { (None, future::ok(counter)) }
 ///   )
 /// });
 /// ```
 ///
 /// FIXME: say moar
-pub fn generate_stream<St, F, Fut, It>(state: St, f: F)
-  -> (StreamGenerator<St, F, Fut>, StreamGeneratorCompletion<St, Fut>)
+pub fn generate_stream<FunctionT, ItemFutureT, ItemT, StateFutureT, StateT, ErrorT>(state: StateT, f: FunctionT)
+  -> (
+    StreamGenerator<StateT, FunctionT, ItemFutureT, StateFutureT>,
+    StreamGeneratorCompletion<StateT, ItemFutureT, StateFutureT>
+  )
   where
-    F: FnMut(St) -> Fut,
-    Fut: IntoFuture<Item = (Option<It>, St)>
+    FunctionT: FnMut(StateT) -> ItemFutureT,
+    ItemFutureT: IntoFuture<Item = (Option<ItemT>, StateFutureT), Error = ErrorT>,
+    StateFutureT: IntoFuture<Item = StateT, Error = ErrorT>
 {
   let inner = Arc::new(Mutex::new(Inner { generator_state: Some(State::Ready(state)), task: None }));
   let generator = StreamGenerator { inner: inner.clone(), f };
@@ -59,28 +66,20 @@ pub fn generate_stream<St, F, Fut, It>(state: St, f: F)
   ( generator, completion )
 }
 
-/// Like `stream::unfold`, except the function always returns a future (so
-/// the future may wait until it resolves to decide if the stream has ended),
-/// and the final state can be extracted from the finished stream. (FIXME)
-///
-/// Given an initial state `state`, and a function `f`, this struct creates
-/// a stream. Each time a new item is requested from the stream, it calls
-/// `f`, which returns an `(Option<It>, St)`:
-///   - `None`: the stream is over
-///   - `Some(item)`: emit the item and call this function again with
-///     the new state to generate the next item.
-pub struct StreamGenerator<St, F, Fut: IntoFuture> {
-  f: F,
-  inner: Arc<Mutex<Inner<St, Fut>>>
+pub struct StreamGenerator<StateT, FunctionT, ItemFutureT: IntoFuture, StateFutureT: IntoFuture> {
+  f: FunctionT,
+  inner: Arc<Mutex<Inner<StateT, ItemFutureT, StateFutureT>>>
 }
 
-impl<St, F, Fut, It> Stream for StreamGenerator<St, F, Fut>
+impl<FunctionT, ItemFutureT, ItemT, StateFutureT, StateT, ErrorT> Stream
+  for StreamGenerator<StateT, FunctionT, ItemFutureT, StateFutureT>
   where
-    F: FnMut(St) -> Fut,
-    Fut: IntoFuture<Item = (Option<It>, St)>
+    FunctionT: FnMut(StateT) -> ItemFutureT,
+    ItemFutureT: IntoFuture<Item = (Option<ItemT>, StateFutureT), Error = ErrorT>,
+    StateFutureT: IntoFuture<Item = StateT, Error = ErrorT>
 {
-  type Item = It;
-  type Error = Fut::Error;
+  type Item = ItemT;
+  type Error = ItemFutureT::Error;
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
     let mut inner = self.inner.lock().unwrap();
@@ -88,39 +87,55 @@ impl<St, F, Fut, It> Stream for StreamGenerator<St, F, Fut>
     loop {
       match inner.generator_state.take().expect("polling stream twice") {
         State::Ready(state) => {
-          let fut = (self.f)(state).into_future();
-          inner.generator_state = Some(State::Working(fut));
+          let item_future = (self.f)(state).into_future();
+          inner.generator_state = Some(State::WorkingOnItem(item_future));
         },
 
-        State::Working(mut fut) => {
-          match fut.poll() {
+        State::WorkingOnItem(mut item_future) => {
+          return match item_future.poll() {
+            Err(e) => {
+              inner.generator_state = Some(State::Error);
+              Err(e)
+            },
+            Ok(Async::NotReady) => {
+              inner.generator_state = Some(State::WorkingOnItem(item_future));
+              Ok(Async::NotReady)
+            },
+            Ok(Async::Ready((None, state_future))) => {
+              inner.generator_state = Some(State::Done(state_future.into_future()));
+              for t in inner.task.take() { t.unpark() };
+              Ok(Async::Ready(None))
+            },
+            Ok(Async::Ready((Some(item), state_future))) => {
+              inner.generator_state = Some(State::WorkingOnState(state_future.into_future()));
+              Ok(Async::Ready(Some(item)))
+            }
+          };
+        },
+
+        State::WorkingOnState(mut state_future) => {
+          match state_future.poll() {
             Err(e) => {
               inner.generator_state = Some(State::Error);
               return Err(e);
             },
             Ok(Async::NotReady) => {
-              inner.generator_state = Some(State::Working(fut));
+              inner.generator_state = Some(State::WorkingOnState(state_future));
               return Ok(Async::NotReady);
             },
-            Ok(Async::Ready((None, state))) => {
-              inner.generator_state = Some(State::Done(Some(state)));
-              for t in inner.task.take() { t.unpark() };
-              return Ok(Async::Ready(None));
-            },
-            Ok(Async::Ready((Some(item), state))) => {
+            Ok(Async::Ready(state)) => {
               inner.generator_state = Some(State::Ready(state));
-              return Ok(Async::Ready(Some(item)));
             }
           }
-        }
+        },
 
         State::Done(_) => {
-          return Ok(Async::Ready(None))
+          return Ok(Async::Ready(None));
         },
 
         // it makes no sense to poll a stream after an error, so just keep saying it ended.
         State::Error => {
-          return Ok(Async::Ready(None))
+          return Ok(Async::Ready(None));
         }
       }
     }
@@ -131,21 +146,31 @@ impl<St, F, Fut, It> Stream for StreamGenerator<St, F, Fut>
 // ----- StreamGeneratorCompletion
 
 #[must_use = "futures do nothing unless polled"]
-pub struct StreamGeneratorCompletion<St, Fut: IntoFuture> {
-  inner: Arc<Mutex<Inner<St, Fut>>>,
+pub struct StreamGeneratorCompletion<StateT, ItemFutureT: IntoFuture, StateFutureT: IntoFuture> {
+  inner: Arc<Mutex<Inner<StateT, ItemFutureT, StateFutureT>>>
 }
 
-impl<St, Fut> Future for StreamGeneratorCompletion<St, Fut>
+impl<StateT, ItemFutureT, StateFutureT> Future for StreamGeneratorCompletion<StateT, ItemFutureT, StateFutureT>
   where
-    Fut: IntoFuture
+    ItemFutureT: IntoFuture,
+    StateFutureT: IntoFuture<Item = StateT>
 {
-  type Item = St;
-  type Error = Fut::Error;
+  type Item = StateT;
+  type Error = StateFutureT::Error;
 
   fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
     let mut inner = self.inner.lock().unwrap();
     match inner.generator_state.take().expect("polling future twice") {
-      State::Done(Some(state)) => Ok(Async::Ready(state)),
+      State::Done(mut state_future) => {
+        match state_future.poll() {
+          Err(e) => Err(e),
+          Ok(Async::NotReady) => {
+            inner.generator_state = Some(State::Done(state_future));
+            Ok(Async::NotReady)
+          },
+          Ok(Async::Ready(state)) => Ok(Async::Ready(state))
+        }
+      },
       other => {
         inner.task = Some(task::park());
         inner.generator_state = Some(other);

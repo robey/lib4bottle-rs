@@ -4,13 +4,15 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod test_stream_generator {
   use futures::{future, Future, stream, Stream};
-  use lib4bottle::stream_toolkit::generate;
+  use lib4bottle::stream_toolkit::generate_stream;
   use std::{io, thread, time};
 
   #[test]
   fn generate_small_stream() {
-    let (stream, future) = generate(0, |counter| {
-      future::ok::<_, io::Error>(if counter < 10 { (Some(counter), counter + 1) } else { (None, counter) })
+    let (stream, future) = generate_stream(0, |counter| {
+      future::ok::<_, io::Error>(
+        if counter < 10 { (Some(counter), future::ok(counter + 1)) } else { (None, future::ok(counter)) }
+      )
     });
 
     assert_eq!(stream.collect().wait().unwrap(), vec![ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ]);
@@ -20,10 +22,10 @@ mod test_stream_generator {
   #[test]
   fn generate_nested_stream() {
     let source: Vec<Result<usize, io::Error>> = (0..10).map(|n| Ok(n)).collect();
-    let (stream, future) = generate(stream::iter(source), |s| {
+    let (stream, future) = generate_stream(stream::iter(source), |s| {
       s.into_future().map(|(possible_n, s)| {
         let item = possible_n.and_then(|n| if n < 3 { Some(n) } else { None });
-        ( item, s )
+        ( item, future::ok(s) )
       }).map_err(|(e, _)| e)
     });
 
@@ -33,8 +35,10 @@ mod test_stream_generator {
 
   #[test]
   fn wake_up_future() {
-    let (stream, future) = generate(0, |counter| {
-      future::ok::<_, io::Error>(if counter < 10 { (Some(counter), counter + 1) } else { (None, counter) })
+    let (stream, future) = generate_stream(0, |counter| {
+      future::ok::<_, io::Error>(
+        if counter < 10 { (Some(counter), future::ok(counter + 1)) } else { (None, future::ok(counter)) }
+      )
     });
 
     let t = thread::spawn(|| {

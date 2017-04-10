@@ -5,8 +5,7 @@ extern crate lib4bottle;
 #[cfg(test)]
 mod test_buffered_stream {
   use bytes::Bytes;
-  use lib4bottle::buffered_stream::BufferedByteStream;
-  use lib4bottle::stream_helpers::{stream_of_vec, stream_to_string_vec};
+  use lib4bottle::stream_toolkit::{BufferedByteStream, stream_of_vec, stream_to_string_vec};
 
   #[test]
   fn combine_small_buffers() {

@@ -77,6 +77,11 @@ impl<S> ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
     self.read(count, ReadMode::AtMost)
   }
 
+  pub fn unread(&mut self, frame: ByteFrame) {
+    self.saved_count += frame.length;
+    for b in frame.vec.into_iter().rev() { self.saved.push_front(b) };
+  }
+
   /// Decompose back into an optional buffer (anything that has been pre-read)
   /// and the original stream.
   pub fn into_inner(self) -> (Option<Bytes>, S) {
