@@ -6,8 +6,8 @@ pub trait SplitUntil {
   /// the split point.
   ///
   /// Returns a `SplitStream` representing the stream up to the split point,
-  /// and a `SplitFuture` which will resolve once the `SplitStream` has been
-  /// drained.
+  /// and a `SplitFuture` which will resolve to the original stream once the
+  /// `SplitStream` has been drained.
   ///
   /// As items arrive, they are passed to `is_last`, which will return a
   /// `Future<bool>` to determine if the split stream should end after this
@@ -32,20 +32,6 @@ impl<S> SplitUntil for S where S: Stream + Sized {
     ( SplitStream { inner: inner.clone() }, SplitFuture { inner: inner.clone() } )
   }
 }
-
-
-// left state:
-//   - left stream: normal
-//   - right stream: park, not_ready
-// transition:
-//   - left stream:
-//       - save popped item
-//       - switch state
-//       - unpark right stream
-//       - ready(none)
-// right state:
-//   - left stream: ready(none)
-//   - right stream: any popped item, then normal
 
 enum FeederState {
   // waiting for the stream to produce an item:
