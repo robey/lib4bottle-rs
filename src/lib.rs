@@ -7,12 +7,12 @@ extern crate futures;
 extern crate lazy_static;
 
 // these could really be in a shared library somewhere:
-pub mod stream_split;
+pub mod stream_toolkit;
+
+pub mod aliases;
 
 // intrinsic to 4bottle format:
 pub mod bottle;
 pub mod header;
 pub mod table;
 pub mod zint;
-
-pub mod stream_toolkit;

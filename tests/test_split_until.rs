@@ -5,10 +5,9 @@ extern crate lib4bottle;
 
 #[cfg(test)]
 mod test_stream_split {
-  // use bytes::{Bytes};
   use futures::{future, Future, Stream, stream};
   use std::{io, thread, time};
-  use lib4bottle::stream_split::{SplitUntil};
+  use lib4bottle::stream_toolkit::{SplitUntil};
 
   #[test]
   fn simple_split() {

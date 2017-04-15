@@ -164,7 +164,7 @@ impl<S, P, R> Stream for SplitStream<S, P, R>
 }
 
 
-// ----- RightStream
+// ----- SplitFuture
 
 #[must_use = "futures do nothing unless polled"]
 pub struct SplitFuture<S, P, R> where S: Stream, R: IntoFuture {
