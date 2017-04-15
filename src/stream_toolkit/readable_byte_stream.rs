@@ -2,9 +2,9 @@ use bytes::{Bytes};
 use futures::{Async, Future, Poll, Stream, stream};
 use futures::stream::{Fuse};
 use std::collections::VecDeque;
-use std::io;
+use std::{fmt, io};
 
-use super::{ByteFrame};
+use super::{ByteFrame, ByteStream};
 
 /// Behaviors for `ReadableByteStream::read`
 #[derive(Clone, Copy, PartialEq)]
@@ -36,13 +36,19 @@ pub enum ReadMode {
 /// into perfectly-sized chunks, the object keeps pre-read data around to use
 /// for subsequent requests. You may use `into_stream()` to create a `Stream`
 /// object that combines the leftover buffers with the remaining stream.
-pub struct ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
+pub struct ReadableByteStream<S> where S: ByteStream {
   stream: Fuse<S>,
   saved: VecDeque<Bytes>,
   saved_count: usize
 }
 
-impl<S> ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
+impl<S> fmt::Debug for ReadableByteStream<S> where S: ByteStream {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "ReadableByteStream(saved_count={:?})", self.saved_count)
+  }
+}
+
+impl<S> ReadableByteStream<S> where S: ByteStream {
   /// Read `count` bytes from a stream, returning a `Future<ByteFrame>` with
   /// a `Vec<Bytes>` of the cumulative buffers.
   pub fn read(self, count: usize, mode: ReadMode)
@@ -98,7 +104,7 @@ impl<S> ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
   }
 }
 
-impl<S> From<S> for ReadableByteStream<S> where S: Stream<Item = Bytes, Error = io::Error> {
+impl<S> From<S> for ReadableByteStream<S> where S: ByteStream {
   fn from(s: S) -> ReadableByteStream<S> {
     ReadableByteStream { stream: s.fuse(), saved: VecDeque::new(), saved_count: 0 }
   }
@@ -108,7 +114,7 @@ impl<S> From<S> for ReadableByteStream<S> where S: Stream<Item = Bytes, Error = 
 // ----- StreamReadFuture
 
 #[must_use = "futures do nothing unless polled"]
-pub struct ReadableByteStreamFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
+pub struct ReadableByteStreamFuture<S> where S: ByteStream {
   stream: Option<Fuse<S>>,
   count: usize,
   mode: ReadMode,
@@ -118,7 +124,7 @@ pub struct ReadableByteStreamFuture<S> where S: Stream<Item = Bytes, Error = io:
   saved_count: usize
 }
 
-impl<S> ReadableByteStreamFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
+impl<S> ReadableByteStreamFuture<S> where S: ByteStream {
   /// Drain up to `count` bytes from the saved deque, returning a new vector
   /// to avoid copying buffers.
   ///
@@ -161,7 +167,7 @@ impl<S> ReadableByteStreamFuture<S> where S: Stream<Item = Bytes, Error = io::Er
   }
 }
 
-impl<S> Future for ReadableByteStreamFuture<S> where S: Stream<Item = Bytes, Error = io::Error> {
+impl<S> Future for ReadableByteStreamFuture<S> where S: ByteStream {
   type Item = (ByteFrame, ReadableByteStream<S>);
   type Error = io::Error;
 
