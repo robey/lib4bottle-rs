@@ -9,9 +9,6 @@ extern crate lazy_static;
 // these could really be in a shared library somewhere:
 pub mod stream_toolkit;
 
-// the code is basically unreadable without type aliases:
-pub mod aliases;
-
 // intrinsic to 4bottle format:
 pub mod bottle;
 pub mod header;

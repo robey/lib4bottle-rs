@@ -2,10 +2,18 @@ use bytes::Bytes;
 use futures::{Future, future, Stream, stream};
 use std::io;
 
-use aliases::{ByteStream, ByteStreamStream, IoFuture};
 use header::{BottleType, Header};
 use stream_toolkit::{
-  BufferedByteStream, ByteFrame, generate_stream, OptionToFuture, ReadableByteStream, stream_of, stream_of_vec
+  BufferedByteStream,
+  ByteFrame,
+  ByteStream,
+  ByteStreamStream,
+  generate_stream,
+  IoFuture,
+  OptionToFuture,
+  ReadableByteStream,
+  stream_of,
+  stream_of_vec
 };
 use table::Table;
 use zint;
