@@ -54,7 +54,7 @@ pub fn bytes_needed(mut number: u64) -> usize {
 
 // ----- frame length
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FrameLength {
   EndOfStream,
   EndOfBottle,

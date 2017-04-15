@@ -12,7 +12,7 @@ const VERSION: u8 = 0;
 const MAX_TABLE_SIZE: usize = 4095;
 
 /// Bottle type (0 - 15) as defined in the spec.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum BottleType {
   File = 0,
   Hashed = 1,
@@ -37,8 +37,8 @@ fn decode_bottle_type(btype: u8) -> Result<BottleType, io::Error> {
 
 /// The header (magic bytes, bottle type, and key/value table) for a bottle.
 pub struct Header {
-  bottle_type: BottleType,
-  table: Table
+  pub bottle_type: BottleType,
+  pub table: Table
 }
 
 impl Header {
